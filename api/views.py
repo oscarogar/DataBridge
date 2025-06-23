@@ -19,7 +19,6 @@ def python_version_view(request):
 api_key = os.getenv("OPENAI_API_KEY")
 EXCEL_PATH = os.path.join(os.path.dirname(__file__), 'data/data.xlsx')
 SHEET_NAME = 'salesData'
-
 client = openai.OpenAI(api_key=api_key) 
 
 # Helper to load and parse data
