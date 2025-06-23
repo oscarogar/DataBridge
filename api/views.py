@@ -19,7 +19,7 @@ def python_version_view(request):
 api_key = os.getenv("OPENAI_API_KEY")
 EXCEL_PATH = os.path.join(os.path.dirname(__file__), 'data/data.xlsx')
 SHEET_NAME = 'salesData'
- 
+
 client = openai.OpenAI(api_key=api_key) 
 
 # Helper to load and parse data
@@ -997,8 +997,9 @@ def product_demand_analysis(request):
         by_month = df.groupby("Month")["Requested Qty"].sum().to_dict()
         by_weekday = df.groupby("Weekday")["Requested Qty"].sum().sort_values(ascending=False).to_dict()
 
-        parsed_start = parse_date(start_date) if start_date else df["Created Date"].min()
-        parsed_end = parse_date(end_date) if end_date else df["Created Date"].max()
+        parsed_start = pd.to_datetime(parse_date(start_date)) if start_date else df["Created Date"].min()
+        parsed_end = pd.to_datetime(parse_date(end_date)) if end_date else df["Created Date"].max()
+
         if not parsed_start or not parsed_end:
             raise ValueError("Invalid start or end date for comparison")
         period_length = parsed_end - parsed_start
@@ -1079,8 +1080,8 @@ def product_revenue_analysis(request):
         by_month = df.groupby("Month")["Net Extended Line Cost"].sum().to_dict()
         by_weekday = df.groupby("Weekday")["Net Extended Line Cost"].sum().sort_values(ascending=False).to_dict()
 
-        parsed_start = parse_date(start_date) if start_date else df["Created Date"].min()
-        parsed_end = parse_date(end_date) if end_date else df["Created Date"].max()
+        parsed_start = pd.to_datetime(parse_date(start_date)) if start_date else df["Created Date"].min()
+        parsed_end = pd.to_datetime(parse_date(end_date)) if end_date else df["Created Date"].max()
         if not parsed_start or not parsed_end:
             raise ValueError("Invalid start or end date for comparison")
         period_length = parsed_end - parsed_start
