@@ -1536,7 +1536,6 @@ def order_calculation_analysis(request):
     except Exception as e:
         return Response({"error": f"Analysis failed: {str(e)}"}, status=500)
 
-
 @api_view(["GET"])
 def customer_segmentation_analysis(request):
     start_date = request.GET.get("start_date")
@@ -1627,7 +1626,7 @@ def customer_purchase_pattern_analysis(request):
         distinct_products=("Product Description", "nunique")
     ).reset_index()
 
-    customer_summary["days_since_last_purchase"] = (today - customer_summary["last_purchase"]).dt.days
+    customer_summary["days_since_last_purchase"] = customer_summary["last_purchase"].apply(lambda x: (today - x).days)
     customer_summary["avg_order_value"] = (customer_summary["total_revenue"] / customer_summary["total_orders"]).round(2)
     customer_summary["avg_items_per_order"] = (customer_summary["total_quantity"] / customer_summary["total_orders"]).round(2)
 
@@ -1677,7 +1676,7 @@ def customer_purchase_pattern_analysis(request):
     timeline = df.groupby(["Sender Name", "Date"])["Order Number"].nunique().reset_index()
     customer_timeline = (
         timeline.groupby("Sender Name")
-        .apply(lambda x: x.sort_values("Date").to_dict(orient="records"))
+        .apply(lambda x: x.drop(columns="Sender Name").sort_values("Date").to_dict(orient="records"))
         .to_dict()
     )
 
