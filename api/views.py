@@ -1145,7 +1145,7 @@ def product_correlation_analysis(request):
         if basket.empty or basket.shape[1] < 2:
             return Response({"message": "Not enough overlapping product orders to compute correlation."}, status=200)
 
-        binary_basket = basket.applymap(lambda x: 1 if x > 0 else 0)
+        binary_basket = (basket > 0).astype(int)
         correlation_matrix = binary_basket.corr().fillna(0).round(3)
 
         # Pairs
