@@ -607,8 +607,24 @@ def cost_analysis(request):
         .nunique().reset_index().rename(columns={"Product Description": "Unique Product Count"})
     )
 
-    most_expensive_product = product_costs.iloc[0].round(2).to_dict() if not product_costs.empty else {}
-    most_expensive_store = store_costs.iloc[0].round(2).to_dict() if not store_costs.empty else {}
+    # Safely round only numeric fields
+    if not product_costs.empty:
+        row = product_costs.iloc[0]
+        most_expensive_product = {
+            "Product Description": row["Product Description"],
+            "Total Cost": round(row["Total Cost"], 2)
+        }
+    else:
+        most_expensive_product = {}
+
+    if not store_costs.empty:
+        row = store_costs.iloc[0]
+        most_expensive_store = {
+            "Store Name": row["Store Name"],
+            "Total Cost": round(row["Total Cost"], 2)
+        }
+    else:
+        most_expensive_store = {}
 
     return Response({
         "mode": "custom" if start_date_param else period,
