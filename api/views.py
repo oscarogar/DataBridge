@@ -1565,13 +1565,14 @@ def order_fulfillment_analysis(request):
         # Fulfilled orders
         fulfilled_df = df.dropna(subset=["Delivery Date"]).copy()
 
-        # Corrected fulfillment logic
+        # Group by order and compute fulfillment days
         order_fulfillment = fulfilled_df.groupby("Order Number").agg({
             "Created Date": "min",
             "Delivery Date": "max",
             "Store Name": "first",
             "Sender Name": "first"
         }).reset_index()
+
         order_fulfillment["Fulfillment Days"] = (
             order_fulfillment["Delivery Date"] - order_fulfillment["Created Date"]
         ).dt.days
@@ -1596,10 +1597,23 @@ def order_fulfillment_analysis(request):
         by_store = order_fulfillment.groupby("Store Name")["Fulfillment Days"].mean().round(2).sort_values().to_dict()
         by_sender = order_fulfillment.groupby("Sender Name")["Fulfillment Days"].mean().round(2).sort_values().to_dict()
 
-        # Top delays
+        # Top delays with timeline info
         delayed = order_fulfillment[order_fulfillment["Fulfillment Days"] > sla_days]
-        top_delays = delayed.sort_values("Fulfillment Days", ascending=False)
-        top_delays = top_delays[["Order Number", "Store Name", "Sender Name", "Fulfillment Days"]].head(5).to_dict(orient="records")
+        top_delays = delayed.sort_values("Fulfillment Days", ascending=False).head(5)
+        top_delays = top_delays.assign(
+            Created_Date=top_delays["Created Date"].dt.strftime('%Y-%m-%d'),
+            Delivery_Date=top_delays["Delivery Date"].dt.strftime('%Y-%m-%d')
+        )
+        top_delays_output = top_delays[[
+            "Order Number", "Store Name", "Sender Name", "Fulfillment Days", "Created_Date", "Delivery_Date"
+        ]].rename(columns={
+            "Order Number": "order_number",
+            "Store Name": "store_name",
+            "Sender Name": "sender_name",
+            "Fulfillment Days": "fulfillment_days",
+            "Created_Date": "created_date",
+            "Delivery_Date": "delivery_date"
+        }).to_dict(orient="records")
 
         # Distribution
         dist = order_fulfillment["Fulfillment Days"].value_counts().sort_index().to_dict()
@@ -1611,7 +1625,7 @@ def order_fulfillment_analysis(request):
             "delivery_efficiency_score": delivery_efficiency_score,
             "cancellation_rate": cancellation_rate,
             "fulfillment_distribution": dist,
-            "top_delayed_orders": top_delays,
+            "top_delayed_orders": top_delays_output,
             "average_fulfillment_by_store": by_store,
             "average_fulfillment_by_sender": by_sender
         })
