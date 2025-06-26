@@ -122,7 +122,7 @@ def sales_analytics(request):
     avg_order_value = total_sales_value / total_orders if total_orders else 0
 
     # ----------------------------
-    # Compute Previous Period (from full df_all)
+    # Compute Previous Period
     # ----------------------------
     range_length = end_date_dt - start_date_dt
     previous_start = start_date_dt - range_length
@@ -151,6 +151,7 @@ def sales_analytics(request):
         .reset_index()
         .rename(columns={"Net Extended Line Cost": "sales"})
     )
+    performance_breakdown["sales"] = performance_breakdown["sales"].round(2)
 
     # ----------------------------
     # Top Products
@@ -163,6 +164,7 @@ def sales_analytics(request):
         .reset_index()
         .rename(columns={"Net Extended Line Cost": "sales"})
     )
+    top_products["sales"] = top_products["sales"].round(2)
 
     # ----------------------------
     # Customer Value
@@ -174,6 +176,7 @@ def sales_analytics(request):
         .reset_index()
         .rename(columns={"Net Extended Line Cost": "value"})
     )
+    customer_value["value"] = customer_value["value"].round(2)
 
     return Response({
         "total_sales_value": round(total_sales_value, 2),
@@ -196,152 +199,6 @@ def get_sub_frequency(main_freq):
         return "H", "%H:%M"
     else:
         return "D", "%Y-%m-%d"  # default fallback
-
-# @api_view(["GET"])
-# def sales_trend_analytics(request):
-#     period = request.GET.get("period", "monthly")  # Optional: 'weekly', 'monthly', 'yearly'
-#     start_date = request.GET.get("start_date")
-#     end_date = request.GET.get("end_date")
-
-#     try:
-#         df = load_data()
-#     except Exception as e:
-#         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
-
-#     df["Created Date"] = pd.to_datetime(df["Created Date"])
-#     df["Net Extended Line Cost"] = df["Net Extended Line Cost"].apply(parse_float)
-
-#     today = df["Created Date"].max().normalize()
-
-#     # Determine custom or default period
-#     if start_date and end_date:
-#         try:
-#             start_current = pd.to_datetime(start_date)
-#             end_current = pd.to_datetime(end_date)
-#         except Exception:
-#             return Response({"error": "Invalid start_date or end_date format. Use YYYY-MM-DD."}, status=400)
-
-#         duration = end_current - start_current
-#         start_previous = start_current - duration - timedelta(days=1)
-#         end_previous = start_current - timedelta(days=1)
-
-#         # Dynamic frequency
-#         days = duration.days
-#         if days <= 7:
-#             freq = "D"
-#             label_format = "%Y-%m-%d"
-#         elif days <= 31:
-#             freq = "W-MON"
-#             label_format = "Week %W"
-#         elif days <= 365:
-#             freq = "M"
-#             label_format = "%B"
-#         else:
-#             freq = "Q"
-#             label_format = "Q%q %Y"
-#     else:
-#         # fallback to predefined period
-#         if period == "weekly":
-#             start_current = today - timedelta(days=today.weekday())
-#             end_current = start_current + timedelta(days=6)
-#             start_previous = start_current - timedelta(weeks=1)
-#             end_previous = start_current - timedelta(days=1)
-#             freq = "D"
-#             label_format = "%Y-%m-%d"
-#         elif period == "monthly":
-#             start_current = today.replace(day=1)
-#             end_current = (start_current + relativedelta(months=1)) - timedelta(days=1)
-#             start_previous = start_current - relativedelta(months=1)
-#             end_previous = start_current - timedelta(days=1)
-#             freq = "W-MON"
-#             label_format = "Week %W"
-#         elif period == "yearly":
-#             start_current = today.replace(month=1, day=1)
-#             end_current = today.replace(month=12, day=31)
-#             start_previous = start_current - relativedelta(years=1)
-#             end_previous = start_current - timedelta(days=1)
-#             freq = "M"
-#             label_format = "%B"
-#         else:
-#             return Response({"error": "Missing or invalid period. Provide either a period or start_date and end_date."}, status=400)
-
-#     # Filter periods
-#     df_current = df[(df["Created Date"] >= start_current) & (df["Created Date"] <= end_current)]
-#     df_previous = df[(df["Created Date"] >= start_previous) & (df["Created Date"] <= end_previous)]
-
-#     # Handle missing data
-#     if df_current.empty:
-#         return Response({"error": "No sales records found for the current period."}, status=404)
-
-#     if df_previous.empty:
-#         return Response({"error": "No sales records found for the previous period."}, status=404)
-
-
-#     # Totals
-#     total_sales_current = df_current["Net Extended Line Cost"].sum()
-#     total_sales_previous = df_previous["Net Extended Line Cost"].sum()
-
-#     growth_percent = (
-#         ((total_sales_current - total_sales_previous) / total_sales_previous) * 100
-#         if total_sales_previous != 0 else (100.0 if total_sales_current else 0.0)
-#     )
-
-#     def breakdown(df_slice, freq, label_format):
-#         df_slice = df_slice.copy()
-#         df_slice["Group"] = df_slice["Created Date"].dt.to_period(freq).dt.start_time
-#         summary = df_slice.groupby("Group")["Net Extended Line Cost"].sum().reset_index()
-#         summary.columns = ["period", "sales"]
-#         summary["label"] = summary["period"].dt.strftime(label_format)
-#         return summary.sort_values("period")
-
-#     current_breakdown = breakdown(df_current, freq, label_format)
-#     previous_breakdown = breakdown(df_previous, freq, label_format)
-    
-#     sub_freq, sub_label_format = get_sub_frequency(freq)
-
-#     detailed_current_breakdown = breakdown(df_current, sub_freq, sub_label_format)
-#     detailed_previous_breakdown = breakdown(df_previous, sub_freq, sub_label_format)
-
-
-#     best_time = current_breakdown.sort_values("sales", ascending=False).iloc[0].to_dict() if not current_breakdown.empty else {}
-
-#     product_sales = (
-#         df_current.groupby("Product Description")["Net Extended Line Cost"]
-#         .sum()
-#         .sort_values(ascending=False)
-#         .reset_index()
-#         .rename(columns={"Net Extended Line Cost": "sales"})
-#     )
-
-#     quarterly_breakdown = []
-#     if (period == "yearly") or (start_date and end_date and duration.days > 180):
-#         df_current["Quarter"] = df_current["Created Date"].dt.to_period("Q").dt.start_time
-#         quarterly_breakdown = (
-#             df_current.groupby("Quarter")["Net Extended Line Cost"]
-#             .sum()
-#             .reset_index()
-#             .rename(columns={"Net Extended Line Cost": "sales", "Quarter": "quarter"})
-#         )
-#         quarterly_breakdown["quarter"] = quarterly_breakdown["quarter"].dt.strftime("Q%q %Y")
-
-#     return Response({
-#         "period": period or "custom",
-#         "start_current": start_current.date(),
-#         "end_current": end_current.date(),
-#         "start_previous": start_previous.date(),
-#         "end_previous": end_previous.date(),
-#         "total_sales_current": round(total_sales_current, 2),
-#         "total_sales_previous": round(total_sales_previous, 2),
-#         "period_growth_percent": round(growth_percent, 2),
-#         "best_time_period": best_time,
-#         "current_period_breakdown": current_breakdown.to_dict(orient="records"),
-#         "previous_period_breakdown": previous_breakdown.to_dict(orient="records"),
-#         "detailed_current_period_breakdown": detailed_current_breakdown.to_dict(orient="records"),
-#         "detailed_previous_period_breakdown": detailed_previous_breakdown.to_dict(orient="records"),
-#         "quarterly_breakdown": quarterly_breakdown,
-#         "product_sales_breakdown": product_sales.to_dict(orient="records"),
-#         "growth_trend": current_breakdown.to_dict(orient="records"),
-#     })
 
 @api_view(["GET"])
 def sales_trend_analytics(request):
@@ -478,25 +335,27 @@ def sales_trend_analytics(request):
         quarterly_breakdown["quarter"] = quarterly_breakdown["quarter"].dt.strftime("Q%q %Y")
 
     return Response({
-        "period": period or "custom",
-        "start_current": start_current.date(),
-        "end_current": end_current.date(),
-        "start_previous": start_previous.date(),
-        "end_previous": end_previous.date(),
-        "total_sales_current": round(total_sales_current, 2),
-        "total_sales_previous": round(total_sales_previous, 2),
-        "period_growth_percent": round(growth_percent, 2),
-        "best_time_period": best_time,
-        "current_period_breakdown": current_breakdown.to_dict(orient="records"),
-        "previous_period_breakdown": previous_breakdown.to_dict(orient="records"),
-        "detailed_current_period_breakdown": detailed_current_breakdown.to_dict(orient="records"),
-        "detailed_previous_period_breakdown": detailed_previous_breakdown.to_dict(orient="records"),
-        "quarterly_breakdown": quarterly_breakdown,
-        "product_sales_breakdown": product_sales.to_dict(orient="records"),
-        "growth_trend": growth_trend_df[["label", "sales", "growth_percent"]].to_dict(orient="records"),
+    "period": period or "custom",
+    "start_current": start_current.date(),
+    "end_current": end_current.date(),
+    "start_previous": start_previous.date(),
+    "end_previous": end_previous.date(),
+    "total_sales_current": round(total_sales_current, 2),
+    "total_sales_previous": round(total_sales_previous, 2),
+    "period_growth_percent": round(growth_percent, 2),
+    "best_time_period": {
+        "period": best_time.get("period"),
+        "sales": round(best_time.get("sales", 0), 2),
+        "label": best_time.get("label")
+    } if best_time else {},
+    "current_period_breakdown": current_breakdown.round(2).to_dict(orient="records"),
+    "previous_period_breakdown": previous_breakdown.round(2).to_dict(orient="records"),
+    "detailed_current_period_breakdown": detailed_current_breakdown.round(2).to_dict(orient="records"),
+    "detailed_previous_period_breakdown": detailed_previous_breakdown.round(2).to_dict(orient="records"),
+    "quarterly_breakdown": quarterly_breakdown.round(2).to_dict(orient="records") if not isinstance(quarterly_breakdown, list) else quarterly_breakdown,
+    "product_sales_breakdown": product_sales.round(2).to_dict(orient="records"),
+    "growth_trend": growth_trend_df[["label", "sales", "growth_percent"]].round(2).to_dict(orient="records"),
     })
-
-
 
 @api_view(["GET"])
 def profit_margin_analytics(request):
@@ -569,12 +428,12 @@ def profit_margin_analytics(request):
     # Slice data
     df_current = df[(df["Created Date"] >= start_current) & (df["Created Date"] <= end_current)]
     df_previous = df[(df["Created Date"] >= start_previous) & (df["Created Date"] <= end_previous)]
+
     if df_current.empty:
         return Response({"error": "No profit data found for the current period."}, status=404)
-
     if df_previous.empty:
         return Response({"error": "No profit data found for the previous period."}, status=404)
-    
+
     # Aggregates
     profit_current = df_current["Profit"].sum()
     revenue_current = df_current["Net Extended Line Cost"].sum()
@@ -598,7 +457,7 @@ def profit_margin_analytics(request):
         summary["profit_margin"] = summary.apply(
             lambda row: (row["profit"] / row["revenue"] * 100) if row["revenue"] else 0, axis=1
         )
-        return summary.sort_values("Period")
+        return summary.round(2).sort_values("Period")  # <-- round all float columns to 2dp
 
     current_breakdown = breakdown(df_current)
     previous_breakdown = breakdown(df_previous)
@@ -719,10 +578,14 @@ def cost_analysis(request):
     )
 
     trend_current = df_current.set_index("Created Date")["Net Extended Line Cost"].resample(trend_freq).sum().reset_index()
+    trend_current["Net Extended Line Cost"] = trend_current["Net Extended Line Cost"].round(2)
+
     trend_previous = (
         df_previous.set_index("Created Date")["Net Extended Line Cost"].resample(trend_freq).sum().reset_index()
         if not df_previous.empty else []
     )
+    if not isinstance(trend_previous, list):
+        trend_previous["Net Extended Line Cost"] = trend_previous["Net Extended Line Cost"].round(2)
 
     # Breakdown & summaries
     product_costs = (
@@ -730,18 +593,22 @@ def cost_analysis(request):
         .sum().reset_index().rename(columns={"Net Extended Line Cost": "Total Cost"})
         .sort_values("Total Cost", ascending=False)
     )
+    product_costs["Total Cost"] = product_costs["Total Cost"].round(2)
+
     store_costs = (
         df_current.groupby("Store Name")["Net Extended Line Cost"]
         .sum().reset_index().rename(columns={"Net Extended Line Cost": "Total Cost"})
         .sort_values("Total Cost", ascending=False)
     )
+    store_costs["Total Cost"] = store_costs["Total Cost"].round(2)
+
     product_count_per_store = (
         df_current.groupby("Store Name")["Product Description"]
         .nunique().reset_index().rename(columns={"Product Description": "Unique Product Count"})
     )
 
-    most_expensive_product = product_costs.iloc[0].to_dict() if not product_costs.empty else {}
-    most_expensive_store = store_costs.iloc[0].to_dict() if not store_costs.empty else {}
+    most_expensive_product = product_costs.iloc[0].round(2).to_dict() if not product_costs.empty else {}
+    most_expensive_store = store_costs.iloc[0].round(2).to_dict() if not store_costs.empty else {}
 
     return Response({
         "mode": "custom" if start_date_param else period,
@@ -821,11 +688,18 @@ def sales_summary(request):
     # Top products
     top_products = (
         df.groupby('Product Description')
-        .agg(total_sales=('Net Extended Line Cost', 'sum'), quantity_sold=('Requested Qty', 'sum'))
+        .agg(
+            total_sales=('Net Extended Line Cost', 'sum'),
+            quantity_sold=('Requested Qty', 'sum')
+        )
         .sort_values(by='total_sales', ascending=False)
         .reset_index()
         .head(5)
     )
+
+    # Round float values in top products
+    top_products['total_sales'] = top_products['total_sales'].round(2)
+    top_products['quantity_sold'] = top_products['quantity_sold'].round(2)
 
     return Response({
         "summary": {
@@ -896,21 +770,28 @@ def transaction_summary(request):
 
     # Store-level summary
     def store_summary(subset_df):
-        return subset_df.groupby('Store Name').agg({
+        summary = subset_df.groupby('Store Name').agg({
             'Requested Qty': 'sum',
             'Net Extended Line Cost': 'sum'
-        }).sort_values('Net Extended Line Cost', ascending=False).round(2).to_dict(orient='index')
+        }).round(2).reset_index()
+        summary['Requested Qty'] = summary['Requested Qty'].round(2)
+        summary['Net Extended Line Cost'] = summary['Net Extended Line Cost'].round(2)
+        return summary.sort_values('Net Extended Line Cost', ascending=False).to_dict(orient='records')
 
     # Product-level summary
     def product_summary(subset_df):
-        return subset_df.groupby('Product Description').agg({
+        summary = subset_df.groupby('Product Description').agg({
             'Requested Qty': 'sum',
             'Net Extended Line Cost': 'sum'
-        }).sort_values('Net Extended Line Cost', ascending=False).round(2).to_dict(orient='index')
+        }).round(2).reset_index()
+        summary['Requested Qty'] = summary['Requested Qty'].round(2)
+        summary['Net Extended Line Cost'] = summary['Net Extended Line Cost'].round(2)
+        return summary.sort_values('Net Extended Line Cost', ascending=False).to_dict(orient='records')
 
     # Trend chart
     def trend_chart(subset_df):
         trend_df = subset_df.groupby(subset_df['Created Date'].dt.date)['Net Extended Line Cost'].sum().reset_index()
+        trend_df['Net Extended Line Cost'] = trend_df['Net Extended Line Cost'].round(2)
         return trend_df.rename(columns={'Created Date': 'date', 'Net Extended Line Cost': 'revenue'}).to_dict(orient='records')
 
     # Percentage change helper
@@ -924,7 +805,7 @@ def transaction_summary(request):
         "end_date": str(end_date_parsed.date()),
         "current_period": {
             "total_transaction_value": round(current_total_value, 2),
-            "total_quantity": int(current_total_quantity),
+            "total_quantity": round(current_total_quantity, 2),
             "average_order_value": round(current_avg_order_value or 0, 2),
             "store_summary": store_summary(current_df),
             "product_summary": product_summary(current_df),
@@ -932,7 +813,7 @@ def transaction_summary(request):
         },
         "previous_period": {
             "total_transaction_value": round(previous_total_value, 2),
-            "total_quantity": int(previous_total_quantity),
+            "total_quantity": round(previous_total_quantity, 2),
             "average_order_value": round(previous_avg_order_value or 0, 2),
             "store_summary": store_summary(previous_df),
             "product_summary": product_summary(previous_df),
