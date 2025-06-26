@@ -729,6 +729,118 @@ def sales_summary(request):
         "top_products": top_products.to_dict(orient='records')
     })
 
+# @api_view(["GET"])
+# def transaction_summary(request):
+#     start_date = request.GET.get("start_date")
+#     end_date = request.GET.get("end_date")
+
+#     if not start_date or not end_date:
+#         return Response({"error": "start_date and end_date are required"}, status=400)
+
+#     try:
+#         start_date_parsed = pd.to_datetime(start_date)
+#         end_date_parsed = pd.to_datetime(end_date)
+
+#         if start_date_parsed > end_date_parsed:
+#             return Response({"error": "start_date cannot be after end_date."}, status=400)
+#     except Exception as e:
+#         return Response({"error": f"Invalid date format: {str(e)}"}, status=400)
+
+#     try:
+#         df = load_data()
+#     except Exception as e:
+#         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
+
+#     df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
+#     df["Net Extended Line Cost"] = pd.to_numeric(df["Net Extended Line Cost"].astype(str).str.replace(",", ""), errors="coerce")
+#     df["Requested Qty"] = pd.to_numeric(df["Requested Qty"], errors="coerce")
+
+#     # Check available range
+#     min_date = df["Created Date"].min()
+#     max_date = df["Created Date"].max()
+#     if (start_date_parsed > max_date) or (end_date_parsed < min_date):
+#         return Response({
+#             "error": "Provided date range is outside the available dataset.",
+#             "data_available_from": str(min_date.date()),
+#             "data_available_to": str(max_date.date())
+#         }, status=404)
+
+#     # Current period
+#     current_df = df[(df["Created Date"] >= start_date_parsed) & (df["Created Date"] <= end_date_parsed)]
+#     if current_df.empty:
+#         return Response({"message": "No transactions found in the current period."}, status=404)
+
+#     current_total_value = current_df['Net Extended Line Cost'].sum()
+#     current_total_quantity = current_df['Requested Qty'].sum()
+#     current_avg_order_value = current_df.groupby('Order Number')['Net Extended Line Cost'].sum().mean()
+
+#     # Previous period
+#     duration = end_date_parsed - start_date_parsed
+#     prev_start = start_date_parsed - duration - timedelta(days=1)
+#     prev_end = start_date_parsed - timedelta(days=1)
+
+#     previous_df = df[(df["Created Date"] >= prev_start) & (df["Created Date"] <= prev_end)]
+#     previous_total_value = previous_df['Net Extended Line Cost'].sum()
+#     previous_total_quantity = previous_df['Requested Qty'].sum()
+#     previous_avg_order_value = previous_df.groupby('Order Number')['Net Extended Line Cost'].sum().mean()
+
+#     # Store-level summary
+#     def store_summary(subset_df):
+#         summary = subset_df.groupby('Store Name').agg({
+#             'Requested Qty': 'sum',
+#             'Net Extended Line Cost': 'sum'
+#         }).round(2).reset_index()
+#         summary['Requested Qty'] = summary['Requested Qty'].round(2)
+#         summary['Net Extended Line Cost'] = summary['Net Extended Line Cost'].round(2)
+#         return summary.sort_values('Net Extended Line Cost', ascending=False).to_dict(orient='records')
+
+#     # Product-level summary
+#     def product_summary(subset_df):
+#         summary = subset_df.groupby('Product Description').agg({
+#             'Requested Qty': 'sum',
+#             'Net Extended Line Cost': 'sum'
+#         }).round(2).reset_index()
+#         summary['Requested Qty'] = summary['Requested Qty'].round(2)
+#         summary['Net Extended Line Cost'] = summary['Net Extended Line Cost'].round(2)
+#         return summary.sort_values('Net Extended Line Cost', ascending=False).to_dict(orient='records')
+
+#     # Trend chart
+#     def trend_chart(subset_df):
+#         trend_df = subset_df.groupby(subset_df['Created Date'].dt.date)['Net Extended Line Cost'].sum().reset_index()
+#         trend_df['Net Extended Line Cost'] = trend_df['Net Extended Line Cost'].round(2)
+#         return trend_df.rename(columns={'Created Date': 'date', 'Net Extended Line Cost': 'revenue'}).to_dict(orient='records')
+
+#     # Percentage change helper
+#     def percentage_change(current, previous):
+#         if previous == 0:
+#             return None
+#         return round(((current - previous) / previous) * 100, 2)
+
+#     return Response({
+#         "start_date": str(start_date_parsed.date()),
+#         "end_date": str(end_date_parsed.date()),
+#         "current_period": {
+#             "total_transaction_value": round(current_total_value, 2),
+#             "total_quantity": round(current_total_quantity, 2),
+#             "average_order_value": round(current_avg_order_value or 0, 2),
+#             "store_summary": store_summary(current_df),
+#             "product_summary": product_summary(current_df),
+#             "trend_chart": trend_chart(current_df),
+#         },
+#         "previous_period": {
+#             "total_transaction_value": round(previous_total_value, 2),
+#             "total_quantity": round(previous_total_quantity, 2),
+#             "average_order_value": round(previous_avg_order_value or 0, 2),
+#             "store_summary": store_summary(previous_df),
+#             "product_summary": product_summary(previous_df),
+#             "trend_chart": trend_chart(previous_df),
+#         },
+#         "percentage_changes": {
+#             "transaction_value_change": percentage_change(current_total_value, previous_total_value),
+#             "quantity_change": percentage_change(current_total_quantity, previous_total_quantity),
+#             "average_order_value_change": percentage_change(current_avg_order_value, previous_avg_order_value),
+#         }
+#     })
 @api_view(["GET"])
 def transaction_summary(request):
     start_date = request.GET.get("start_date")
@@ -740,7 +852,6 @@ def transaction_summary(request):
     try:
         start_date_parsed = pd.to_datetime(start_date)
         end_date_parsed = pd.to_datetime(end_date)
-
         if start_date_parsed > end_date_parsed:
             return Response({"error": "start_date cannot be after end_date."}, status=400)
     except Exception as e:
@@ -784,7 +895,7 @@ def transaction_summary(request):
     previous_total_quantity = previous_df['Requested Qty'].sum()
     previous_avg_order_value = previous_df.groupby('Order Number')['Net Extended Line Cost'].sum().mean()
 
-    # Store-level summary
+    # Store-level summary (Top 20)
     def store_summary(subset_df):
         summary = subset_df.groupby('Store Name').agg({
             'Requested Qty': 'sum',
@@ -792,9 +903,9 @@ def transaction_summary(request):
         }).round(2).reset_index()
         summary['Requested Qty'] = summary['Requested Qty'].round(2)
         summary['Net Extended Line Cost'] = summary['Net Extended Line Cost'].round(2)
-        return summary.sort_values('Net Extended Line Cost', ascending=False).to_dict(orient='records')
+        return summary.sort_values('Net Extended Line Cost', ascending=False).head(20).to_dict(orient='records')
 
-    # Product-level summary
+    # Product-level summary (Top 20)
     def product_summary(subset_df):
         summary = subset_df.groupby('Product Description').agg({
             'Requested Qty': 'sum',
@@ -802,7 +913,7 @@ def transaction_summary(request):
         }).round(2).reset_index()
         summary['Requested Qty'] = summary['Requested Qty'].round(2)
         summary['Net Extended Line Cost'] = summary['Net Extended Line Cost'].round(2)
-        return summary.sort_values('Net Extended Line Cost', ascending=False).to_dict(orient='records')
+        return summary.sort_values('Net Extended Line Cost', ascending=False).head(20).to_dict(orient='records')
 
     # Trend chart
     def trend_chart(subset_df):
@@ -841,6 +952,7 @@ def transaction_summary(request):
             "average_order_value_change": percentage_change(current_avg_order_value, previous_avg_order_value),
         }
     })
+
 
 @api_view(["GET"])
 def transaction_entities_analysis(request):
