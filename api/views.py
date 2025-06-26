@@ -1556,7 +1556,7 @@ def order_fulfillment_analysis(request):
         canceled_orders = canceled_orders_df["Order Number"].nunique()
         cancellation_rate = round((canceled_orders / total_orders) * 100, 2) if total_orders else 0
 
-        # Fulfilled orders (calculate at order level)
+        # Fulfilled orders (per order level)
         fulfilled_df = df.dropna(subset=["Delivery Date"]).copy()
         order_fulfillment = fulfilled_df.groupby("Order Number").agg({
             "Created Date": "min",
@@ -1568,6 +1568,12 @@ def order_fulfillment_analysis(request):
         order_fulfillment["Fulfillment Days"] = (
             order_fulfillment["Delivery Date"] - order_fulfillment["Created Date"]
         ).dt.days
+
+        # Remove invalid fulfillment durations
+        order_fulfillment = order_fulfillment[
+            (order_fulfillment["Fulfillment Days"] >= 0) & 
+            (order_fulfillment["Fulfillment Days"] <= 60)  # Optional cap for realistic data
+        ]
 
         if order_fulfillment.empty:
             return Response({"message": "No fulfilled orders in this period."}, status=200)
