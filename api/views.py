@@ -19,6 +19,7 @@ def python_version_view(request):
 api_key = os.getenv("OPENAI_API_KEY")
 EXCEL_PATH = os.path.join(os.path.dirname(__file__), 'data/data.xlsx')
 SHEET_NAME = 'salesData'
+
 client = openai.OpenAI(api_key=api_key) 
 
 # Helper to load and parse data
@@ -196,6 +197,152 @@ def get_sub_frequency(main_freq):
     else:
         return "D", "%Y-%m-%d"  # default fallback
 
+# @api_view(["GET"])
+# def sales_trend_analytics(request):
+#     period = request.GET.get("period", "monthly")  # Optional: 'weekly', 'monthly', 'yearly'
+#     start_date = request.GET.get("start_date")
+#     end_date = request.GET.get("end_date")
+
+#     try:
+#         df = load_data()
+#     except Exception as e:
+#         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
+
+#     df["Created Date"] = pd.to_datetime(df["Created Date"])
+#     df["Net Extended Line Cost"] = df["Net Extended Line Cost"].apply(parse_float)
+
+#     today = df["Created Date"].max().normalize()
+
+#     # Determine custom or default period
+#     if start_date and end_date:
+#         try:
+#             start_current = pd.to_datetime(start_date)
+#             end_current = pd.to_datetime(end_date)
+#         except Exception:
+#             return Response({"error": "Invalid start_date or end_date format. Use YYYY-MM-DD."}, status=400)
+
+#         duration = end_current - start_current
+#         start_previous = start_current - duration - timedelta(days=1)
+#         end_previous = start_current - timedelta(days=1)
+
+#         # Dynamic frequency
+#         days = duration.days
+#         if days <= 7:
+#             freq = "D"
+#             label_format = "%Y-%m-%d"
+#         elif days <= 31:
+#             freq = "W-MON"
+#             label_format = "Week %W"
+#         elif days <= 365:
+#             freq = "M"
+#             label_format = "%B"
+#         else:
+#             freq = "Q"
+#             label_format = "Q%q %Y"
+#     else:
+#         # fallback to predefined period
+#         if period == "weekly":
+#             start_current = today - timedelta(days=today.weekday())
+#             end_current = start_current + timedelta(days=6)
+#             start_previous = start_current - timedelta(weeks=1)
+#             end_previous = start_current - timedelta(days=1)
+#             freq = "D"
+#             label_format = "%Y-%m-%d"
+#         elif period == "monthly":
+#             start_current = today.replace(day=1)
+#             end_current = (start_current + relativedelta(months=1)) - timedelta(days=1)
+#             start_previous = start_current - relativedelta(months=1)
+#             end_previous = start_current - timedelta(days=1)
+#             freq = "W-MON"
+#             label_format = "Week %W"
+#         elif period == "yearly":
+#             start_current = today.replace(month=1, day=1)
+#             end_current = today.replace(month=12, day=31)
+#             start_previous = start_current - relativedelta(years=1)
+#             end_previous = start_current - timedelta(days=1)
+#             freq = "M"
+#             label_format = "%B"
+#         else:
+#             return Response({"error": "Missing or invalid period. Provide either a period or start_date and end_date."}, status=400)
+
+#     # Filter periods
+#     df_current = df[(df["Created Date"] >= start_current) & (df["Created Date"] <= end_current)]
+#     df_previous = df[(df["Created Date"] >= start_previous) & (df["Created Date"] <= end_previous)]
+
+#     # Handle missing data
+#     if df_current.empty:
+#         return Response({"error": "No sales records found for the current period."}, status=404)
+
+#     if df_previous.empty:
+#         return Response({"error": "No sales records found for the previous period."}, status=404)
+
+
+#     # Totals
+#     total_sales_current = df_current["Net Extended Line Cost"].sum()
+#     total_sales_previous = df_previous["Net Extended Line Cost"].sum()
+
+#     growth_percent = (
+#         ((total_sales_current - total_sales_previous) / total_sales_previous) * 100
+#         if total_sales_previous != 0 else (100.0 if total_sales_current else 0.0)
+#     )
+
+#     def breakdown(df_slice, freq, label_format):
+#         df_slice = df_slice.copy()
+#         df_slice["Group"] = df_slice["Created Date"].dt.to_period(freq).dt.start_time
+#         summary = df_slice.groupby("Group")["Net Extended Line Cost"].sum().reset_index()
+#         summary.columns = ["period", "sales"]
+#         summary["label"] = summary["period"].dt.strftime(label_format)
+#         return summary.sort_values("period")
+
+#     current_breakdown = breakdown(df_current, freq, label_format)
+#     previous_breakdown = breakdown(df_previous, freq, label_format)
+    
+#     sub_freq, sub_label_format = get_sub_frequency(freq)
+
+#     detailed_current_breakdown = breakdown(df_current, sub_freq, sub_label_format)
+#     detailed_previous_breakdown = breakdown(df_previous, sub_freq, sub_label_format)
+
+
+#     best_time = current_breakdown.sort_values("sales", ascending=False).iloc[0].to_dict() if not current_breakdown.empty else {}
+
+#     product_sales = (
+#         df_current.groupby("Product Description")["Net Extended Line Cost"]
+#         .sum()
+#         .sort_values(ascending=False)
+#         .reset_index()
+#         .rename(columns={"Net Extended Line Cost": "sales"})
+#     )
+
+#     quarterly_breakdown = []
+#     if (period == "yearly") or (start_date and end_date and duration.days > 180):
+#         df_current["Quarter"] = df_current["Created Date"].dt.to_period("Q").dt.start_time
+#         quarterly_breakdown = (
+#             df_current.groupby("Quarter")["Net Extended Line Cost"]
+#             .sum()
+#             .reset_index()
+#             .rename(columns={"Net Extended Line Cost": "sales", "Quarter": "quarter"})
+#         )
+#         quarterly_breakdown["quarter"] = quarterly_breakdown["quarter"].dt.strftime("Q%q %Y")
+
+#     return Response({
+#         "period": period or "custom",
+#         "start_current": start_current.date(),
+#         "end_current": end_current.date(),
+#         "start_previous": start_previous.date(),
+#         "end_previous": end_previous.date(),
+#         "total_sales_current": round(total_sales_current, 2),
+#         "total_sales_previous": round(total_sales_previous, 2),
+#         "period_growth_percent": round(growth_percent, 2),
+#         "best_time_period": best_time,
+#         "current_period_breakdown": current_breakdown.to_dict(orient="records"),
+#         "previous_period_breakdown": previous_breakdown.to_dict(orient="records"),
+#         "detailed_current_period_breakdown": detailed_current_breakdown.to_dict(orient="records"),
+#         "detailed_previous_period_breakdown": detailed_previous_breakdown.to_dict(orient="records"),
+#         "quarterly_breakdown": quarterly_breakdown,
+#         "product_sales_breakdown": product_sales.to_dict(orient="records"),
+#         "growth_trend": current_breakdown.to_dict(orient="records"),
+#     })
+
 @api_view(["GET"])
 def sales_trend_analytics(request):
     period = request.GET.get("period", "monthly")  # Optional: 'weekly', 'monthly', 'yearly'
@@ -275,7 +422,6 @@ def sales_trend_analytics(request):
     if df_previous.empty:
         return Response({"error": "No sales records found for the previous period."}, status=404)
 
-
     # Totals
     total_sales_current = df_current["Net Extended Line Cost"].sum()
     total_sales_previous = df_previous["Net Extended Line Cost"].sum()
@@ -295,15 +441,22 @@ def sales_trend_analytics(request):
 
     current_breakdown = breakdown(df_current, freq, label_format)
     previous_breakdown = breakdown(df_previous, freq, label_format)
-    
-    sub_freq, sub_label_format = get_sub_frequency(freq)
 
+    # Compute percentage growth trend
+    growth_trend_df = current_breakdown.copy()
+    growth_trend_df["growth_percent"] = growth_trend_df["sales"].pct_change() * 100
+    growth_trend_df["growth_percent"] = growth_trend_df["growth_percent"].round(2)
+    growth_trend_df["growth_percent"] = growth_trend_df["growth_percent"].fillna(0.0)
+
+    # Sub-period breakdowns
+    sub_freq, sub_label_format = get_sub_frequency(freq)
     detailed_current_breakdown = breakdown(df_current, sub_freq, sub_label_format)
     detailed_previous_breakdown = breakdown(df_previous, sub_freq, sub_label_format)
 
-
+    # Best-performing time
     best_time = current_breakdown.sort_values("sales", ascending=False).iloc[0].to_dict() if not current_breakdown.empty else {}
 
+    # Product-level breakdown
     product_sales = (
         df_current.groupby("Product Description")["Net Extended Line Cost"]
         .sum()
@@ -312,6 +465,7 @@ def sales_trend_analytics(request):
         .rename(columns={"Net Extended Line Cost": "sales"})
     )
 
+    # Quarterly breakdown for long periods
     quarterly_breakdown = []
     if (period == "yearly") or (start_date and end_date and duration.days > 180):
         df_current["Quarter"] = df_current["Created Date"].dt.to_period("Q").dt.start_time
@@ -339,8 +493,10 @@ def sales_trend_analytics(request):
         "detailed_previous_period_breakdown": detailed_previous_breakdown.to_dict(orient="records"),
         "quarterly_breakdown": quarterly_breakdown,
         "product_sales_breakdown": product_sales.to_dict(orient="records"),
-        "growth_trend": current_breakdown.to_dict(orient="records"),
+        "growth_trend": growth_trend_df[["label", "sales", "growth_percent"]].to_dict(orient="records"),
     })
+
+
 
 @api_view(["GET"])
 def profit_margin_analytics(request):
