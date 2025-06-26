@@ -62,11 +62,12 @@ def filter_by_date(df, start_date, end_date):
     return df
 
 def safe_pct_change(row):
-            current = row["current"]
-            previous = row["previous"]
-            if previous == 0:
-                return None if current == 0 else None  # or 'new' if preferred
-            return ((current - previous) / previous) * 100
+    current = row["current"]
+    previous = row["previous"]
+    if previous == 0:
+        return "new" if current > 0 else 0
+    return round(((current - previous) / previous) * 100, 2)
+
 
 def parse_float(value):
     try:
@@ -1153,10 +1154,19 @@ def product_revenue_analysis(request):
 
         combined_revenue = pd.concat([recent_revenue, prev_revenue], axis=1, keys=["current", "previous"]).fillna(0)
 
+        def safe_pct_change(row):
+            current = row["current"]
+            previous = row["previous"]
+            if previous == 0:
+                return "new" if current > 0 else 0
+            return round(((current - previous) / previous) * 100, 2)
+
         combined_revenue["pct_change"] = combined_revenue.apply(safe_pct_change, axis=1)
 
         rising_revenue = (
-            combined_revenue.sort_values("pct_change", ascending=False)
+            combined_revenue.sort_values(
+                by="pct_change", ascending=False, key=lambda x: x.map(lambda v: float('-inf') if v == 0 else (float('inf') if v == "new" else v))
+            )
             .head(5)
             .round(2)
             .to_dict(orient="index")
