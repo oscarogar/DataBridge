@@ -17,9 +17,11 @@ urlpatterns = [
     path("product-revenues/", views.product_revenue_analysis),
     path("product-correlation/", views.product_correlation_analysis),
     path("product-trend-analysis/", views.product_trend_analysis),
+    
     path("order-analysis/", views.order_analysis),
     path("order-fulfillment-analysis/", views.order_fulfillment_analysis),
     path("order-calculation-analysis/", views.order_calculation_analysis),
+    
     path("customer-segmentation-analysis/", views.customer_segmentation_analysis),
     path('customer-buying-patterns/', views.customer_purchase_pattern_analysis),
     
