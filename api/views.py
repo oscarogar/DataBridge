@@ -1010,6 +1010,89 @@ def transaction_timing_analysis(request):
         }
     })
 
+# @api_view(["GET"])
+# def product_demand_analysis(request):
+#     start_date = request.GET.get("start_date")
+#     end_date = request.GET.get("end_date")
+
+#     try:
+#         df = load_data()
+#     except Exception as e:
+#         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
+
+#     df["Created Date"] = pd.to_datetime(df["Created Date"], errors='coerce')
+#     df["Requested Qty"] = pd.to_numeric(df["Requested Qty"], errors="coerce")
+#     df = df.dropna(subset=["Created Date", "Requested Qty"])
+
+#     try:
+#         if start_date:
+#             start = pd.to_datetime(start_date)
+#             df = df[df["Created Date"] >= start]
+#         if end_date:
+#             end = pd.to_datetime(end_date)
+#             df = df[df["Created Date"] <= end]
+#     except Exception as e:
+#         return Response({"error": f"Invalid date format: {str(e)}"}, status=400)
+
+#     if df.empty:
+#         return Response({"message": "No data found in the selected period."}, status=200)
+
+#     try:
+#         df["Month"] = df["Created Date"].dt.to_period("M").astype(str)
+#         df["Weekday"] = df["Created Date"].dt.day_name()
+
+#         top_products = df.groupby("Product Description")["Requested Qty"].sum().sort_values(ascending=False).head(10)
+#         trend = df.groupby(df["Created Date"].dt.date)["Requested Qty"].sum().reset_index()
+#         trend.columns = ["date", "quantity"]
+
+#         store_demand = (
+#             df.groupby(["Store Name", "Product Description"])["Requested Qty"].sum()
+#             .reset_index().sort_values(by="Requested Qty", ascending=False)
+#         )
+
+#         product_order_qty = df.groupby(["Product Description", "Order Number"])["Requested Qty"].sum().reset_index()
+#         velocity = product_order_qty.groupby("Product Description")["Requested Qty"].mean().sort_values(ascending=False).head(10)
+
+#         by_month = df.groupby("Month")["Requested Qty"].sum().to_dict()
+#         by_weekday = df.groupby("Weekday")["Requested Qty"].sum().sort_values(ascending=False).to_dict()
+
+#         parsed_start = pd.to_datetime(parse_date(start_date)) if start_date else df["Created Date"].min()
+#         parsed_end = pd.to_datetime(parse_date(end_date)) if end_date else df["Created Date"].max()
+
+#         if not parsed_start or not parsed_end:
+#             raise ValueError("Invalid start or end date for comparison")
+#         period_length = parsed_end - parsed_start
+
+#         prev_start = parsed_start - period_length
+#         prev_end = parsed_start - timedelta(days=1)
+#         prev_df = df[(df["Created Date"] >= prev_start) & (df["Created Date"] <= prev_end)]
+
+#         recent_top = df.groupby("Product Description")["Requested Qty"].sum()
+#         prev_top = prev_df.groupby("Product Description")["Requested Qty"].sum()
+
+#         combined_demand = pd.concat([recent_top, prev_top], axis=1, keys=["current", "previous"]).fillna(0)
+#         combined_demand["pct_change"] = ((combined_demand["current"] - combined_demand["previous"]) /
+#                                           combined_demand["previous"].replace(0, 1)) * 100
+#         rising_demand = combined_demand.sort_values("pct_change", ascending=False).head(5).round(2).to_dict(orient="index")
+
+#         matrix = df.pivot_table(index="Store Name", columns="Product Description", values="Requested Qty", aggfunc="sum", fill_value=0)
+
+#     except Exception as e:
+#         return Response({"error": f"Failed to compute demand analysis: {str(e)}"}, status=500)
+
+#     return Response({
+#         "top_products_by_quantity": top_products.to_dict(),
+#         "demand_trend_over_time": trend.to_dict(orient="records"),
+#         "store_product_demand": store_demand.to_dict(orient="records"),
+#         "demand_velocity_per_product": velocity.round(2).to_dict(),
+#         "seasonality": {
+#             "monthly_demand": by_month,
+#             "weekday_demand": by_weekday
+#         },
+#         "rising_product_demand": rising_demand,
+#         "product_demand_matrix": matrix.astype(int).to_dict()
+#     })
+
 @api_view(["GET"])
 def product_demand_analysis(request):
     start_date = request.GET.get("start_date")
@@ -1071,8 +1154,8 @@ def product_demand_analysis(request):
         prev_top = prev_df.groupby("Product Description")["Requested Qty"].sum()
 
         combined_demand = pd.concat([recent_top, prev_top], axis=1, keys=["current", "previous"]).fillna(0)
-        combined_demand["pct_change"] = ((combined_demand["current"] - combined_demand["previous"]) /
-                                          combined_demand["previous"].replace(0, 1)) * 100
+
+        combined_demand["pct_change"] = combined_demand.apply(safe_pct_change, axis=1)
         rising_demand = combined_demand.sort_values("pct_change", ascending=False).head(5).round(2).to_dict(orient="index")
 
         matrix = df.pivot_table(index="Store Name", columns="Product Description", values="Requested Qty", aggfunc="sum", fill_value=0)
@@ -1086,12 +1169,14 @@ def product_demand_analysis(request):
         "store_product_demand": store_demand.to_dict(orient="records"),
         "demand_velocity_per_product": velocity.round(2).to_dict(),
         "seasonality": {
-            "monthly_demand": by_month,
-            "weekday_demand": by_weekday
+            "monthly_demand": {k: round(v, 2) for k, v in by_month.items()},
+            "weekday_demand": {k: round(v, 2) for k, v in by_weekday.items()}
         },
         "rising_product_demand": rising_demand,
         "product_demand_matrix": matrix.astype(int).to_dict()
     })
+
+
 
 @api_view(["GET"])
 def product_revenue_analysis(request):
