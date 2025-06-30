@@ -25,6 +25,7 @@ urlpatterns = [
     path("customer-segmentation-analysis/", views.customer_segmentation_analysis),
     path('customer-buying-patterns/', views.customer_purchase_pattern_analysis),
     
+    path("list-products/", views.list_all_products),
     
     
     
