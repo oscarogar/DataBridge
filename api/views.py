@@ -1523,6 +1523,109 @@ def order_fulfillment_analysis(request):
     except Exception as e:
         return Response({"error": f"Analysis failed: {str(e)}"}, status=500)
 
+# @api_view(["GET"])
+# def order_fulfillment_analysis(request):
+#     start_date = request.GET.get("start_date")
+#     end_date = request.GET.get("end_date")
+#     sla_param = request.GET.get("sla", 5)
+
+#     try:
+#         sla_days = int(sla_param)
+#     except (TypeError, ValueError):
+#         return Response({"error": "Invalid SLA value. It must be an integer."}, status=400)
+
+#     try:
+#         df = load_data()
+#     except Exception as e:
+#         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
+
+#     try:
+#         df = filter_by_date(df, start_date, end_date)
+
+#         if df.empty:
+#             return Response({"message": "No data found in the selected period."}, status=200)
+
+#         df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
+#         df["Delivery Date"] = pd.to_datetime(df["Delivery Date"], errors="coerce")
+#         df = df.dropna(subset=["Created Date"])
+
+#         total_orders = df["Order Number"].nunique()
+
+#         # Canceled orders
+#         canceled_orders_df = df[df["Delivery Date"].isna()]
+#         canceled_orders = canceled_orders_df["Order Number"].nunique()
+#         cancellation_rate = round((canceled_orders / total_orders) * 100, 2) if total_orders else 0
+
+#         # Fulfilled orders (per order level)
+#         fulfilled_df = df.dropna(subset=["Delivery Date"]).copy()
+#         order_fulfillment = fulfilled_df.groupby("Order Number").agg({
+#             "Created Date": "min",
+#             "Delivery Date": "max",
+#             "Store Name": "first",
+#             "Sender Name": "first"
+#         }).reset_index()
+
+#         order_fulfillment["Fulfillment Days"] = (
+#             order_fulfillment["Delivery Date"] - order_fulfillment["Created Date"]
+#         ).dt.days
+
+#         # Remove invalid fulfillment durations
+#         order_fulfillment = order_fulfillment[
+#             (order_fulfillment["Fulfillment Days"] >= 0) & 
+#             (order_fulfillment["Fulfillment Days"] <= 60)  # Optional cap for realistic data
+#         ]
+
+#         if order_fulfillment.empty:
+#             return Response({"message": "No fulfilled orders in this period."}, status=200)
+
+#         # Fulfillment stats
+#         stats = order_fulfillment["Fulfillment Days"].describe().round(2).to_dict()
+#         stats["std"] = round(order_fulfillment["Fulfillment Days"].std(), 2)
+
+#         # SLA compliance
+#         within_sla = (order_fulfillment["Fulfillment Days"] <= sla_days).sum()
+#         total_fulfilled_orders = order_fulfillment["Order Number"].nunique()
+#         sla_pct = round((within_sla / total_fulfilled_orders) * 100, 2) if total_fulfilled_orders else 0
+
+#         # Delivery efficiency
+#         delivery_rate = round((total_fulfilled_orders / total_orders) * 100, 2) if total_orders else 0
+#         delivery_efficiency_score = round((delivery_rate * sla_pct) / 100, 2)
+
+#         # Average fulfillment by store and sender
+#         by_store = (
+#             order_fulfillment.groupby("Store Name")["Fulfillment Days"]
+#             .mean().round(2).sort_values().to_dict()
+#         )
+#         by_sender = (
+#             order_fulfillment.groupby("Sender Name")["Fulfillment Days"]
+#             .mean().round(2).sort_values().to_dict()
+#         )
+
+#         # Top delayed orders
+#         delayed = order_fulfillment[order_fulfillment["Fulfillment Days"] > sla_days]
+#         top_delays = delayed.sort_values("Fulfillment Days", ascending=False)
+#         top_delays = top_delays[[
+#             "Order Number", "Store Name", "Sender Name", "Fulfillment Days"
+#         ]].head(5).to_dict(orient="records")
+
+#         # Fulfillment distribution
+#         dist = order_fulfillment["Fulfillment Days"].value_counts().sort_index().to_dict()
+
+#         return Response({
+#             "fulfillment_statistics": stats,
+#             "percent_within_sla": sla_pct,
+#             "delivery_rate": delivery_rate,
+#             "delivery_efficiency_score": delivery_efficiency_score,
+#             "cancellation_rate": cancellation_rate,
+#             "fulfillment_distribution": dist,
+#             "top_delayed_orders": top_delays,
+#             "average_fulfillment_by_store": by_store,
+#             "average_fulfillment_by_sender": by_sender
+#         })
+
+#     except Exception as e:
+#         return Response({"error": f"Analysis failed: {str(e)}"}, status=500)
+
 
 @api_view(["GET"])
 def order_calculation_analysis(request):
@@ -1765,3 +1868,26 @@ def customer_purchase_pattern_analysis(request):
         }
     })
 
+
+@api_view(['GET'])
+def list_all_products(request):
+    try:
+        df = load_data()
+
+        # Clean and normalize product fields
+        df['Product Description'] = df['Product Description'].fillna('').str.strip()
+        # df['Product Code'] = df['Product Code'].fillna('').astype(str).str.strip()
+        # df['Barcode'] = df['Barcode'].fillna('').astype(str).str.strip()
+
+        # Get unique products
+        # products = df[['Product Code', 'Product Description', 'Barcode']].drop_duplicates()
+        products = df[['Product Description']].drop_duplicates()
+        products = products.sort_values(by='Product Description')
+
+        # Convert to list of dicts
+        product_list = products.to_dict(orient='records')
+
+        return Response(product_list, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
