@@ -1664,6 +1664,113 @@ def customer_segmentation_analysis(request):
         "churned_customers": churn_list
     })
 
+# @api_view(["GET"])
+# def customer_purchase_pattern_analysis(request):
+#     start_date = request.GET.get("start_date")
+#     end_date = request.GET.get("end_date")
+#     store = request.GET.get("store")
+#     sender = request.GET.get("sender")
+
+#     try:
+#         df = load_data()
+#         df = filter_by_date(df, start_date, end_date)
+#         df.dropna(subset=["Created Date", "Sender Name", "Order Number"], inplace=True)
+#         df["Store Name"] = df["Store Name"].astype(str).str.strip()
+#         df["Sender Name"] = df["Sender Name"].astype(str).str.strip()
+#         if store:
+#             df = df[df["Store Name"].str.lower() == store.lower()]
+#         if sender:
+#             df = df[df["Sender Name"].str.lower() == sender.lower()]
+
+#     except Exception as e:
+#         return Response({"error": f"Data error: {str(e)}"}, status=400)
+
+#     if df.empty:
+#         return Response({"message": "No transaction data found for the selected filters."})
+
+#     today = datetime.today().date()
+#     df["Date"] = df["Created Date"].dt.date
+#     df["Weekday"] = df["Created Date"].dt.day_name()
+#     df["Hour"] = df["Created Date"].dt.hour
+
+#     # 1. Aggregate Customer Summary
+#     customer_summary = df.groupby("Sender Name").agg(
+#         total_orders=("Order Number", "nunique"),
+#         total_revenue=("Net Extended Line Cost", "sum"),
+#         total_quantity=("Requested Qty", "sum"),
+#         first_purchase=("Date", "min"),
+#         last_purchase=("Date", "max"),
+#         distinct_products=("Product Description", "nunique")
+#     ).reset_index()
+
+#     customer_summary["days_since_last_purchase"] = customer_summary["last_purchase"].apply(lambda x: (today - x).days)
+#     customer_summary["avg_order_value"] = (customer_summary["total_revenue"] / customer_summary["total_orders"]).round(2)
+#     customer_summary["avg_items_per_order"] = (customer_summary["total_quantity"] / customer_summary["total_orders"]).round(2)
+
+#     # 2. Purchase Frequency Patterns
+#     order_dates = df.groupby(["Sender Name", "Order Number"])["Date"].min().reset_index()
+#     order_diffs = order_dates.groupby("Sender Name")["Date"].apply(lambda x: x.sort_values().diff().dt.days.dropna())
+#     avg_days_between_orders = order_diffs.groupby(level=0).mean().round(2)
+#     repeat_rate = order_dates.groupby("Sender Name")["Order Number"].count().apply(lambda x: 1 if x > 1 else 0)
+
+#     customer_summary = customer_summary.set_index("Sender Name")
+#     customer_summary["avg_days_between_orders"] = avg_days_between_orders
+#     customer_summary["is_repeater"] = repeat_rate
+
+#     # 3. Product Preferences
+#     top_products = (
+#         df.groupby(["Sender Name", "Product Description"])["Requested Qty"]
+#         .sum().reset_index()
+#         .sort_values(["Sender Name", "Requested Qty"], ascending=[True, False])
+#     )
+#     top_products = top_products.groupby("Sender Name").head(3).groupby("Sender Name")["Product Description"].apply(list)
+#     customer_summary["top_products"] = top_products
+
+#     # 4. Time-Based Patterns
+#     weekday_pref = df.groupby(["Sender Name", "Weekday"])["Order Number"].nunique().reset_index()
+#     weekday_pref = weekday_pref.sort_values(["Sender Name", "Order Number"], ascending=[True, False])
+#     top_weekday = weekday_pref.groupby("Sender Name").first().reset_index()
+#     customer_summary["top_order_day"] = top_weekday.set_index("Sender Name")["Weekday"]
+
+#     hour_pref = df.groupby(["Sender Name", "Hour"])["Order Number"].nunique().reset_index()
+#     hour_pref = hour_pref.sort_values(["Sender Name", "Order Number"], ascending=[True, False])
+#     top_hour = hour_pref.groupby("Sender Name").first().reset_index()
+#     customer_summary["top_order_hour"] = top_hour.set_index("Sender Name")["Hour"]
+
+#     # 5. Customer Segments
+#     def segment(row):
+#         if row["total_orders"] == 1:
+#             return "New"
+#         elif row["avg_days_between_orders"] and row["avg_days_between_orders"] < 14:
+#             return "Frequent"
+#         elif row["is_repeater"]:
+#             return "Returning"
+#         return "One-time"
+
+#     customer_summary["segment"] = customer_summary.apply(segment, axis=1)
+
+#     # 6. Order Timeline per Customer
+#     timeline = df.groupby(["Sender Name", "Date"])["Order Number"].nunique().reset_index()
+#     customer_timeline = (
+#         timeline.groupby("Sender Name")
+#         .apply(lambda x: x.drop(columns="Sender Name").sort_values("Date").to_dict(orient="records"))
+#         .to_dict()
+#     )
+
+#     # Final output
+#     result = customer_summary.reset_index().round(2).to_dict(orient='records')
+
+#     return Response({
+#         "customer_purchase_patterns": result,
+#         "customer_order_timeline": customer_timeline,
+#         "summary": {
+#             "total_customers": len(customer_summary),
+#             "frequent_customers": int((customer_summary["segment"] == "Frequent").sum()),
+#             "returning_customers": int((customer_summary["segment"] == "Returning").sum()),
+#             "new_customers": int((customer_summary["segment"] == "New").sum())
+#         }
+#     })
+
 @api_view(["GET"])
 def customer_purchase_pattern_analysis(request):
     start_date = request.GET.get("start_date")
@@ -1674,12 +1781,16 @@ def customer_purchase_pattern_analysis(request):
     try:
         df = load_data()
         df = filter_by_date(df, start_date, end_date)
-        df.dropna(subset=["Created Date", "Sender Name", "Order Number"], inplace=True)
+        df.dropna(subset=["Created Date", "Sender Name", "Store Name", "Order Number"], inplace=True)
+
+        df["Store Name"] = df["Store Name"].astype(str).str.strip()
+        df["Sender Name"] = df["Sender Name"].astype(str).str.strip()
 
         if store:
-            df = df[df["Store Name"].str.contains(store, case=False, na=False)]
+            df = df[df["Store Name"].str.lower() == store.lower()]
+
         if sender:
-            df = df[df["Sender Name"].str.contains(sender, case=False, na=False)]
+            df = df[df["Sender Name"].str.lower() == sender.lower()]
 
     except Exception as e:
         return Response({"error": f"Data error: {str(e)}"}, status=400)
@@ -1692,8 +1803,19 @@ def customer_purchase_pattern_analysis(request):
     df["Weekday"] = df["Created Date"].dt.day_name()
     df["Hour"] = df["Created Date"].dt.hour
 
-    # 1. Aggregate Customer Summary
-    customer_summary = df.groupby("Sender Name").agg(
+    # Determine grouping
+    if store and sender:
+        group_by = ["Store Name", "Sender Name"]
+        group_label = lambda row: f"{row['Store Name']} | {row['Sender Name']}"
+    elif store:
+        group_by = ["Store Name"]
+        group_label = lambda row: row["Store Name"]
+    else:
+        group_by = ["Sender Name"]
+        group_label = lambda row: row["Sender Name"]
+
+    # 1. Aggregate Summary
+    customer_summary = df.groupby(group_by).agg(
         total_orders=("Order Number", "nunique"),
         total_revenue=("Net Extended Line Cost", "sum"),
         total_quantity=("Requested Qty", "sum"),
@@ -1707,36 +1829,40 @@ def customer_purchase_pattern_analysis(request):
     customer_summary["avg_items_per_order"] = (customer_summary["total_quantity"] / customer_summary["total_orders"]).round(2)
 
     # 2. Purchase Frequency Patterns
-    order_dates = df.groupby(["Sender Name", "Order Number"])["Date"].min().reset_index()
-    order_diffs = order_dates.groupby("Sender Name")["Date"].apply(lambda x: x.sort_values().diff().dt.days.dropna())
+    order_dates = df.groupby(group_by + ["Order Number"])["Date"].min().reset_index()
+    order_diffs = order_dates.groupby(group_by)["Date"].apply(lambda x: x.sort_values().diff().dt.days.dropna())
     avg_days_between_orders = order_diffs.groupby(level=0).mean().round(2)
-    repeat_rate = order_dates.groupby("Sender Name")["Order Number"].count().apply(lambda x: 1 if x > 1 else 0)
+    repeat_rate = order_dates.groupby(group_by)["Order Number"].count().apply(lambda x: 1 if x > 1 else 0)
 
-    customer_summary = customer_summary.set_index("Sender Name")
+    customer_summary.set_index(group_by, inplace=True)
     customer_summary["avg_days_between_orders"] = avg_days_between_orders
     customer_summary["is_repeater"] = repeat_rate
 
-    # 3. Product Preferences
+    # 3. Top Products
     top_products = (
-        df.groupby(["Sender Name", "Product Description"])["Requested Qty"]
+        df.groupby(group_by + ["Product Description"])["Requested Qty"]
         .sum().reset_index()
-        .sort_values(["Sender Name", "Requested Qty"], ascending=[True, False])
+        .sort_values(group_by + ["Requested Qty"], ascending=[True]*len(group_by) + [False])
     )
-    top_products = top_products.groupby("Sender Name").head(3).groupby("Sender Name")["Product Description"].apply(list)
+    top_products = top_products.groupby(group_by).head(3).groupby(group_by)["Product Description"].apply(list)
     customer_summary["top_products"] = top_products
 
-    # 4. Time-Based Patterns
-    weekday_pref = df.groupby(["Sender Name", "Weekday"])["Order Number"].nunique().reset_index()
-    weekday_pref = weekday_pref.sort_values(["Sender Name", "Order Number"], ascending=[True, False])
-    top_weekday = weekday_pref.groupby("Sender Name").first().reset_index()
-    customer_summary["top_order_day"] = top_weekday.set_index("Sender Name")["Weekday"]
+    # 4. Time Patterns
+    weekday_pref = df.groupby(group_by + ["Weekday"])["Order Number"].nunique().reset_index()
+    weekday_pref = weekday_pref.sort_values(group_by + ["Order Number"], ascending=[True]*len(group_by) + [False])
+    top_weekday = weekday_pref.groupby(group_by).first().reset_index()
+    customer_summary["top_order_day"] = pd.Series(
+        top_weekday.set_index(pd.MultiIndex.from_frame(top_weekday[group_by]))["Weekday"]
+    )
 
-    hour_pref = df.groupby(["Sender Name", "Hour"])["Order Number"].nunique().reset_index()
-    hour_pref = hour_pref.sort_values(["Sender Name", "Order Number"], ascending=[True, False])
-    top_hour = hour_pref.groupby("Sender Name").first().reset_index()
-    customer_summary["top_order_hour"] = top_hour.set_index("Sender Name")["Hour"]
+    hour_pref = df.groupby(group_by + ["Hour"])["Order Number"].nunique().reset_index()
+    hour_pref = hour_pref.sort_values(group_by + ["Order Number"], ascending=[True]*len(group_by) + [False])
+    top_hour = hour_pref.groupby(group_by).first().reset_index()
+    customer_summary["top_order_hour"] = pd.Series(
+        top_hour.set_index(pd.MultiIndex.from_frame(top_hour[group_by]))["Hour"]
+    )
 
-    # 5. Customer Segments
+    # 5. Segmentation
     def segment(row):
         if row["total_orders"] == 1:
             return "New"
@@ -1748,22 +1874,24 @@ def customer_purchase_pattern_analysis(request):
 
     customer_summary["segment"] = customer_summary.apply(segment, axis=1)
 
-    # 6. Order Timeline per Customer
-    timeline = df.groupby(["Sender Name", "Date"])["Order Number"].nunique().reset_index()
+    # 6. Timeline
+    timeline = df.groupby(group_by + ["Date"])["Order Number"].nunique().reset_index()
     customer_timeline = (
-        timeline.groupby("Sender Name")
-        .apply(lambda x: x.drop(columns="Sender Name").sort_values("Date").to_dict(orient="records"))
+        timeline.groupby(group_by)
+        .apply(lambda x: x.drop(columns=group_by).sort_values("Date").to_dict(orient="records"))
         .to_dict()
     )
 
-    # Final output
-    result = customer_summary.reset_index().round(2).to_dict(orient='records')
+    # Final Output
+    customer_summary = customer_summary.reset_index()
+    customer_summary["group"] = customer_summary.apply(group_label, axis=1)
+    result = customer_summary.round(2).to_dict(orient="records")
 
     return Response({
         "customer_purchase_patterns": result,
-        "customer_order_timeline": customer_timeline,
+        "customer_order_timeline": {k if isinstance(k, str) else " | ".join(k): v for k, v in customer_timeline.items()},
         "summary": {
-            "total_customers": len(customer_summary),
+            "total_customers": len(result),
             "frequent_customers": int((customer_summary["segment"] == "Frequent").sum()),
             "returning_customers": int((customer_summary["segment"] == "Returning").sum()),
             "new_customers": int((customer_summary["segment"] == "New").sum())
