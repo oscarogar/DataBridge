@@ -27,6 +27,7 @@ urlpatterns = [
     
     path("list-products/", views.list_all_products),
     
+    path('get-insights-and-analytics/', views.get_sales_insight_result),
     
     
     
