@@ -22,7 +22,6 @@ def python_version_view(request):
 EXCEL_PATH = os.path.join(os.path.dirname(__file__), 'data/data.xlsx')
 SHEET_NAME = 'salesData'
 
-# Helper to load and parse data
 def load_data():
     df = pd.read_excel(EXCEL_PATH, sheet_name=SHEET_NAME)
     df['Created Date'] = pd.to_datetime(df['Created Date'])
