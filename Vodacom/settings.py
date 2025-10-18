@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-59-=^da7_(n8k2luxpaw$b!-dgp^60@*u($9hr^!06il#gnptg
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['databridgebackend-757c7a061b57.herokuapp.com', '127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['databridge-analytics-949e003d22f5.herokuapp.com', '127.0.0.1', 'localhost']
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
 
