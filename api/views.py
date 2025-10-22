@@ -2875,7 +2875,8 @@ def product_performance_analysis(request):
     end_date = request.GET.get("end_date")
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
