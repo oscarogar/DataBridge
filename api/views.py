@@ -369,7 +369,8 @@ def sales_analytics(request):
     end_date = request.GET.get("end_date")
 
     try:
-        df_all = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df_all = combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -501,7 +502,8 @@ def sales_trend_analytics(request):
     end_date = request.GET.get("end_date")
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df = combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -667,7 +669,8 @@ def profit_margin_analytics(request):
     end_date = request.GET.get("end_date")
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -784,7 +787,8 @@ def profit_margin_analytics(request):
 @api_view(['GET'])
 def cost_analysis(request):
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -954,7 +958,8 @@ def cost_analysis(request):
 @api_view(['GET'])
 def sales_summary(request):
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -1057,7 +1062,8 @@ def transaction_summary(request):
         return Response({"error": f"Invalid date format: {str(e)}"}, status=400)
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -1177,7 +1183,8 @@ def transaction_entities_analysis(request):
     sender_filter = request.GET.get("sender")
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -1285,7 +1292,8 @@ def transaction_timing_analysis(request):
     end_date = request.GET.get("end_date")
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -1378,7 +1386,8 @@ def product_demand_analysis(request):
     end_date = request.GET.get("end_date")
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -1481,7 +1490,8 @@ def product_revenue_analysis(request):
     end_date = request.GET.get("end_date")
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -1593,7 +1603,8 @@ def product_correlation_analysis(request):
     sender_filter = request.GET.get("sender")
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -1688,7 +1699,8 @@ def product_trend_analysis(request):
         return Response({"error": "Invalid top N value, must be an integer."}, status=400)
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -1785,7 +1797,8 @@ def order_analysis(request):
     product_filter = request.GET.get("product")
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -1905,7 +1918,8 @@ def order_fulfillment_analysis(request):
         return Response({"error": "Invalid SLA value. It must be an integer."}, status=400)
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -2007,7 +2021,8 @@ def order_calculation_analysis(request):
         return Response({"error": "Invalid threshold. It must be a numeric value."}, status=400)
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -2343,7 +2358,8 @@ def customer_purchase_pattern_analysis(request):
     sender = request.GET.get("sender")
 
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
         df = filter_by_date(df, start_date, end_date)
         df.dropna(subset=["Created Date", "Sender Name", "Store Name", "Order Number"], inplace=True)
 
@@ -2483,7 +2499,8 @@ def customer_purchase_pattern_analysis(request):
 @api_view(['GET'])
 def list_all_products(request):
     try:
-        df = load_data()
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
 
         # Clean and normalize product fields
         df['Product Description'] = df['Product Description'].fillna('').str.strip()
