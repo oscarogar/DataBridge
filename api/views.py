@@ -28,35 +28,80 @@ SHEET_NAME = 'invoiceData'
 #     df['Created Date'] = pd.to_datetime(df['Created Date'])
 #     return df
 
+# def load_data():
+#     # Load both sheets
+#     sales_df = pd.read_excel(EXCEL_PATH, sheet_name="salesData")
+#     invoice_df = pd.read_excel(EXCEL_PATH, sheet_name="invoiceData")
+
+#     # Convert date columns safely
+#     for df in [sales_df, invoice_df]:
+#         df["Created Date"] = pd.to_datetime(df["Created Date"], errors='coerce')
+#         if "Date Delivered" in df.columns:
+#             df["Delivery Date"] = pd.to_datetime(df["Delivery Date"], errors='coerce')
+#         else:
+#             df["Date Delivered"] = pd.NaT
+
+#     # Columns you care about
+#     common_cols = [
+#         "Sender Code", "Sender Name", "Receiver Code", "Receiver Name",
+#         "Store Code", "Store Name", "Order Number", "Barcode", "Product Code",
+#         "Product Description", "Requested Qty", "Cost Price", "Net Extended Line Cost",
+#         "Created Date", "Delivery date"
+#     ]
+
+#     sales_df = sales_df[[c for c in common_cols if c in sales_df.columns]].copy()
+#     invoice_df = invoice_df[[c for c in common_cols if c in invoice_df.columns]].copy()
+
+#     # Add source column
+#     sales_df["Source"] = "Order"
+#     invoice_df["Source"] = "Invoice"
+
+#     # Combine both for any global analysis
+#     combined_df = pd.concat([sales_df, invoice_df], ignore_index=True)
+#     combined_df.dropna(subset=["Created Date", "Sender Name"], inplace=True)
+
+#     return combined_df, sales_df, invoice_df
+
 def load_data():
     # Load both sheets
     sales_df = pd.read_excel(EXCEL_PATH, sheet_name="salesData")
     invoice_df = pd.read_excel(EXCEL_PATH, sheet_name="invoiceData")
 
+    # --- Normalize column names ---
+    sales_df.columns = sales_df.columns.str.strip()
+    invoice_df.columns = invoice_df.columns.str.strip()
+
+    rename_map = {
+        "Date Created": "Created Date",
+        "Order reference": "Order Number",
+        "Delivery date": "Delivery Date",
+    }
+
+    sales_df.rename(columns=rename_map, inplace=True)
+    invoice_df.rename(columns=rename_map, inplace=True)
+
     # Convert date columns safely
     for df in [sales_df, invoice_df]:
-        df["Created Date"] = pd.to_datetime(df["Created Date"], errors='coerce')
-        if "Date Delivered" in df.columns:
-            df["Date Delivered"] = pd.to_datetime(df["Date Delivered"], errors='coerce')
-        else:
-            df["Date Delivered"] = pd.NaT
+        if "Created Date" in df.columns:
+            df["Created Date"] = pd.to_datetime(df["Created Date"], errors='coerce')
+        if "Delivery Date" in df.columns:
+            df["Delivery Date"] = pd.to_datetime(df["Delivery Date"], errors='coerce')
 
     # Columns you care about
     common_cols = [
-        "Sender Code", "Sender Name", "Receiver Code", "Receiver Name",
+        "Sender", "Sender Name", "Receiver Code", "Receiver Name",
         "Store Code", "Store Name", "Order Number", "Barcode", "Product Code",
         "Product Description", "Requested Qty", "Cost Price", "Net Extended Line Cost",
-        "Created Date", "Date Delivered"
+        "Created Date", "Delivery Date"
     ]
 
     sales_df = sales_df[[c for c in common_cols if c in sales_df.columns]].copy()
     invoice_df = invoice_df[[c for c in common_cols if c in invoice_df.columns]].copy()
 
-    # Add source column
+    # Add source
     sales_df["Source"] = "Order"
     invoice_df["Source"] = "Invoice"
 
-    # Combine both for any global analysis
     combined_df = pd.concat([sales_df, invoice_df], ignore_index=True)
     combined_df.dropna(subset=["Created Date", "Sender Name"], inplace=True)
 
@@ -1799,6 +1844,28 @@ def order_analysis(request):
     try:
         combined_df, sales_df, invoice_df = load_data()
         df= combined_df
+        # Clean numeric columns
+        df["Net Extended Line Cost"] = (
+            df["Net Extended Line Cost"]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .astype(float)
+        )
+
+        df["Requested Qty"] = (
+            df["Requested Qty"]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .astype(float)
+        )
+
+        df["Cost Price"] = (
+            df["Cost Price"]
+            .astype(str)
+            .str.replace(",", "", regex=False)
+            .astype(float)
+        )
+
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
@@ -2026,13 +2093,24 @@ def order_calculation_analysis(request):
     except Exception as e:
         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
-    try:
+    try:        
         df = filter_by_date(df, start_date, end_date)
         if df.empty:
             return Response({"message": "No order data found in this period."}, status=200)
 
         df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
         df = df.dropna(subset=["Created Date"])
+
+        # 🔧 CLEAN NUMERIC FIELDS
+        for col in ["Net Extended Line Cost", "Requested Qty", "Cost Price"]:
+            if col in df.columns:
+                df[col] = (
+                    df[col]
+                    .astype(str)
+                    .str.replace(r"[^0-9.\-]", "", regex=True)
+                    .apply(pd.to_numeric, errors="coerce")
+                )
+
 
         # Aggregate order-level metrics
         order_value = df.groupby("Order Number")["Net Extended Line Cost"].sum()
@@ -2124,86 +2202,86 @@ def order_calculation_analysis(request):
 
 # @api_view(["GET"])
 # def customer_segmentation_analysis(request):
-#     start_date = request.GET.get("start_date")
-#     end_date = request.GET.get("end_date")
-#     today = datetime.today().date()
+    start_date = request.GET.get("start_date")
+    end_date = request.GET.get("end_date")
+    today = datetime.today().date()
 
-#     try:
-#         df = load_data()
-#         df = filter_by_date(df, start_date, end_date)
-#         df["Created Date"] = pd.to_datetime(df["Created Date"], errors='coerce')
-#         df.dropna(subset=["Created Date", "Sender Name"], inplace=True)
-#     except Exception as e:
-#         return Response({"error": f"Data error: {str(e)}"}, status=400)
+    try:
+        df = load_data()
+        df = filter_by_date(df, start_date, end_date)
+        df["Created Date"] = pd.to_datetime(df["Created Date"], errors='coerce')
+        df.dropna(subset=["Created Date", "Sender Name"], inplace=True)
+    except Exception as e:
+        return Response({"error": f"Data error: {str(e)}"}, status=400)
 
-#     if df.empty:
-#         return Response({"message": "No transaction data found for the selected period."}, status=200)
+    if df.empty:
+        return Response({"message": "No transaction data found for the selected period."}, status=200)
 
-#     try:
-#         # ===== RFM Calculation =====
-#         rfm = df.groupby("Sender Name").agg({
-#             "Created Date": lambda x: (today - x.max().date()).days,   # Recency
-#             "Order Number": "nunique",                                 # Frequency
-#             "Net Extended Line Cost": "sum"                            # Monetary
-#         }).reset_index()
+    try:
+        # ===== RFM Calculation =====
+        rfm = df.groupby("Sender Name").agg({
+            "Created Date": lambda x: (today - x.max().date()).days,   # Recency
+            "Order Number": "nunique",                                 # Frequency
+            "Net Extended Line Cost": "sum"                            # Monetary
+        }).reset_index()
 
-#         rfm.columns = ["Customer", "Recency", "Frequency", "Monetary"]
-#         rfm["Segment"] = pd.qcut(rfm["Monetary"], 4, labels=["Low", "Mid-Low", "Mid-High", "High"])
+        rfm.columns = ["Customer", "Recency", "Frequency", "Monetary"]
+        rfm["Segment"] = pd.qcut(rfm["Monetary"], 4, labels=["Low", "Mid-Low", "Mid-High", "High"])
 
-#         # ===== Revenue Over Time by Customer =====
-#         df["Period"] = df["Created Date"].dt.to_period("M").astype(str)
-#         revenue_time = df.groupby(["Period", "Sender Name"])["Net Extended Line Cost"].sum().reset_index()
-#         revenue_pivot = revenue_time.pivot(index="Period", columns="Sender Name", values="Net Extended Line Cost").fillna(0).round(2)
-#         revenue_over_time = revenue_pivot.to_dict(orient="index")
+        # ===== Revenue Over Time by Customer =====
+        df["Period"] = df["Created Date"].dt.to_period("M").astype(str)
+        revenue_time = df.groupby(["Period", "Sender Name"])["Net Extended Line Cost"].sum().reset_index()
+        revenue_pivot = revenue_time.pivot(index="Period", columns="Sender Name", values="Net Extended Line Cost").fillna(0).round(2)
+        revenue_over_time = revenue_pivot.to_dict(orient="index")
 
-#         # ===== Top Growing Customers by Revenue (Last 2 Periods) =====
-#         if len(revenue_pivot.index) >= 2:
-#             latest_two = revenue_pivot.iloc[-2:]
-#             revenue_diff = latest_two.diff().iloc[-1].sort_values(ascending=False)
-#             top_growing_customers = revenue_diff.head(5).round(2).to_dict()
-#         else:
-#             top_growing_customers = {}
+        # ===== Top Growing Customers by Revenue (Last 2 Periods) =====
+        if len(revenue_pivot.index) >= 2:
+            latest_two = revenue_pivot.iloc[-2:]
+            revenue_diff = latest_two.diff().iloc[-1].sort_values(ascending=False)
+            top_growing_customers = revenue_diff.head(5).round(2).to_dict()
+        else:
+            top_growing_customers = {}
 
-#         # ===== Customer Churn Indication =====
-#         churn_threshold = 30
-#         churned_customers = rfm[rfm["Recency"] > churn_threshold].sort_values("Recency", ascending=False)
-#         churn_list = churned_customers[["Customer", "Recency", "Monetary"]].head(10).round(2).to_dict(orient="records")
+        # ===== Customer Churn Indication =====
+        churn_threshold = 30
+        churned_customers = rfm[rfm["Recency"] > churn_threshold].sort_values("Recency", ascending=False)
+        churn_list = churned_customers[["Customer", "Recency", "Monetary"]].head(10).round(2).to_dict(orient="records")
 
-#         # === AI Background Task Trigger ===
-#         cache_key = f"customer_segmentation_analysis:{start_date or 'null'}:{end_date or 'null'}"
-#         cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-#         cache.set(cache_key + ":insight", "Processing...", timeout=3600)
-#         cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
+        # === AI Background Task Trigger ===
+        cache_key = f"customer_segmentation_analysis:{start_date or 'null'}:{end_date or 'null'}"
+        cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+        cache.set(cache_key + ":insight", "Processing...", timeout=3600)
+        cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
 
-#         threading.Thread(
-#             target=generate_insight_and_forecast_background,
-#             args=({
-#                 "rfm": rfm.round(2).to_dict(orient="records"),
-#                 "summary": {
-#                     "total_customers": rfm.shape[0],
-#                     "high_value_customers": int((rfm["Segment"] == "High").sum()),
-#                     "low_value_customers": int((rfm["Segment"] == "Low").sum()),
-#                 },
-#                 "revenue_over_time": revenue_over_time,
-#                 "top_growing_customers": top_growing_customers,
-#                 "churned_customers": churn_list
-#             }, start_date, end_date, None, cache_key, "customer_segmentation_analysis")
-#         ).start()
+        threading.Thread(
+            target=generate_insight_and_forecast_background,
+            args=({
+                "rfm": rfm.round(2).to_dict(orient="records"),
+                "summary": {
+                    "total_customers": rfm.shape[0],
+                    "high_value_customers": int((rfm["Segment"] == "High").sum()),
+                    "low_value_customers": int((rfm["Segment"] == "Low").sum()),
+                },
+                "revenue_over_time": revenue_over_time,
+                "top_growing_customers": top_growing_customers,
+                "churned_customers": churn_list
+            }, start_date, end_date, None, cache_key, "customer_segmentation_analysis")
+        ).start()
 
-#         return Response({
-#             "customer_rfm": rfm.round(2).to_dict(orient="records"),
-#             "summary": {
-#                 "total_customers": rfm.shape[0],
-#                 "high_value_customers": int((rfm["Segment"] == "High").sum()),
-#                 "low_value_customers": int((rfm["Segment"] == "Low").sum()),
-#             },
-#             "revenue_over_time": revenue_over_time,
-#             "top_growing_customers": top_growing_customers,
-#             "churned_customers": churn_list,
-#             "data_key": cache_key
-#         })
-#     except Exception as e:
-#         return Response({"error": f"Failed to compute customer segmentation: {str(e)}"}, status=500)
+        return Response({
+            "customer_rfm": rfm.round(2).to_dict(orient="records"),
+            "summary": {
+                "total_customers": rfm.shape[0],
+                "high_value_customers": int((rfm["Segment"] == "High").sum()),
+                "low_value_customers": int((rfm["Segment"] == "Low").sum()),
+            },
+            "revenue_over_time": revenue_over_time,
+            "top_growing_customers": top_growing_customers,
+            "churned_customers": churn_list,
+            "data_key": cache_key
+        })
+    except Exception as e:
+        return Response({"error": f"Failed to compute customer segmentation: {str(e)}"}, status=500)
 
 @api_view(["GET"])
 def customer_segmentation_analysis(request):
@@ -2212,23 +2290,42 @@ def customer_segmentation_analysis(request):
     today = datetime.today().date()
 
     try:
-        # ===== LOAD & COMBINE BOTH SHEETS =====
+        # ===== LOAD & NORMALIZE BOTH SHEETS =====
         sales_df = pd.read_excel(EXCEL_PATH, sheet_name="salesData")
         invoice_df = pd.read_excel(EXCEL_PATH, sheet_name="invoiceData")
 
         for df in [sales_df, invoice_df]:
-            df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
-            if "Date Delivered" in df.columns:
-                df["Date Delivered"] = pd.to_datetime(df["Date Delivered"], errors="coerce")
+            df.columns = (
+                df.columns.str.strip()
+                .str.replace(r"[\.\s]+", " ", regex=True)
+                .str.replace(r"\s+", " ", regex=True)
+                .str.strip()
+            )
+
+        rename_map = {
+            "Date Created": "Created Date",
+            "Delivery date": "Delivery Date",
+            "Order reference": "Order Number",
+            "Requested Quantity": "Requested Qty",
+            "Net Extended Line Cost.": "Net Extended Line Cost",
+        }
+        sales_df.rename(columns=rename_map, inplace=True)
+        invoice_df.rename(columns=rename_map, inplace=True)
+
+        for df in [sales_df, invoice_df]:
+            if "Created Date" in df.columns:
+                df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
+            if "Delivery Date" in df.columns:
+                df["Delivery Date"] = pd.to_datetime(df["Delivery Date"], errors="coerce")
 
         common_cols = [
-            "Sender Code", "Sender Name", "Receiver Code", "Receiver Name",
+            "Sender", "Sender Name", "Receiver Code", "Receiver Name",
             "Store Code", "Store Name", "Order Number", "Barcode", "Product Code",
             "Product Description", "Requested Qty", "Cost Price", "Net Extended Line Cost",
-            "Created Date", "Date Delivered"
+            "Created Date", "Delivery Date"
         ]
-        sales_df = sales_df[[c for c in common_cols if c in sales_df.columns]]
-        invoice_df = invoice_df[[c for c in common_cols if c in invoice_df.columns]]
+        sales_df = sales_df[[c for c in common_cols if c in sales_df.columns]].copy()
+        invoice_df = invoice_df[[c for c in common_cols if c in invoice_df.columns]].copy()
 
         sales_df["Source"] = "Order"
         invoice_df["Source"] = "Invoice"
@@ -2240,53 +2337,24 @@ def customer_segmentation_analysis(request):
         if df.empty:
             return Response({"message": "No transaction data found for the selected period."}, status=200)
 
-    except Exception as e:
-        return Response({"error": f"Data error: {str(e)}"}, status=400)
+        # ✅ Ensure datetime before helpers
+        # ✅ Ensure datetime before helpers
+        if not pd.api.types.is_datetime64_any_dtype(df["Created Date"]):
+            df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
+            df.dropna(subset=["Created Date"], inplace=True)
+        if "Delivery Date" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["Delivery Date"]):
+            df["Delivery Date"] = pd.to_datetime(df["Delivery Date"], errors="coerce")
 
-    try:
-        # ===== RFM ANALYSIS =====
-        rfm = df.groupby("Sender Name").agg({
-            "Created Date": lambda x: (today - x.max().date()).days,  # Recency
-            "Order Number": "nunique",                                # Frequency
-            "Net Extended Line Cost": "sum"                           # Monetary
-        }).reset_index()
-        rfm.columns = ["Customer", "Recency", "Frequency", "Monetary"]
 
-        rfm["R_Score"] = pd.qcut(rfm["Recency"], 4, labels=[4, 3, 2, 1])
-        rfm["F_Score"] = pd.qcut(rfm["Frequency"].rank(method="first"), 4, labels=[1, 2, 3, 4])
-        rfm["M_Score"] = pd.qcut(rfm["Monetary"], 4, labels=[1, 2, 3, 4])
-        rfm["RFM_Score"] = rfm[["R_Score", "F_Score", "M_Score"]].astype(int).sum(axis=1)
-        rfm["Segment"] = pd.cut(
-            rfm["RFM_Score"],
-            bins=[0, 5, 7, 9, 12],
-            labels=["Low Value", "Mid-Low", "Mid-High", "High Value"]
-        )
+        # ===== RFM / CLV / CHURN =====
+        rfm = compute_rfm(df, today)
+        clv = compute_clv(df)
+        churn_df, churn_rate = compute_churn(df, today)
 
-        # ===== CUSTOMER LIFETIME VALUE (CLV) =====
-        clv = df.groupby("Sender Name").agg({
-            "Order Number": "nunique",
-            "Net Extended Line Cost": "sum"
-        }).reset_index()
-        clv["Avg Order Value"] = clv["Net Extended Line Cost"] / clv["Order Number"]
-        clv["Purchase Frequency"] = clv["Order Number"] / len(df["Sender Name"].unique())
-        clv["CLV"] = (clv["Avg Order Value"] * clv["Purchase Frequency"]) * 12  # Annual projection
-
+        # Merge
         rfm = rfm.merge(clv[["Sender Name", "CLV"]], left_on="Customer", right_on="Sender Name", how="left").drop("Sender Name", axis=1)
-
-        # ===== CHURN / RETENTION ANALYSIS =====
-        last_purchase = df.groupby("Sender Name")["Created Date"].max().reset_index()
-        last_purchase["Days Since Last Purchase"] = (today - last_purchase["Created Date"].dt.date).dt.days
-        churn_threshold = 60  # days
-        last_purchase["Status"] = last_purchase["Days Since Last Purchase"].apply(
-            lambda x: "Churned" if x > churn_threshold else "Active"
-        )
-
-        churn_rate = (last_purchase["Status"].value_counts(normalize=True).get("Churned", 0) * 100).round(2)
-
-        rfm = rfm.merge(
-            last_purchase[["Sender Name", "Status"]],
-            left_on="Customer", right_on="Sender Name", how="left"
-        ).drop("Sender Name", axis=1).rename(columns={"Status": "Customer Status"})
+        rfm = rfm.merge(churn_df[["Sender Name", "Status"]], left_on="Customer", right_on="Sender Name", how="left") \
+                 .drop("Sender Name", axis=1).rename(columns={"Status": "Customer Status"})
 
         # ===== REVENUE OVER TIME =====
         df["Period"] = df["Created Date"].dt.to_period("M").astype(str)
@@ -2302,11 +2370,10 @@ def customer_segmentation_analysis(request):
         else:
             top_growing_customers = {}
 
-        # ===== TOP CHURNED CUSTOMERS =====
-        churned_customers = rfm[rfm["Customer Status"] == "Churned"]
-        churn_list = churned_customers[["Customer", "Recency", "Monetary", "CLV"]].head(10).round(2).to_dict(orient="records")
+        churn_list = rfm[rfm["Customer Status"] == "Churned"][["Customer", "Recency", "Monetary", "CLV"]] \
+                        .head(10).round(2).to_dict(orient="records")
 
-        # ===== CACHE & BACKGROUND TASK (unchanged) =====
+        # ===== CACHE + THREAD (unchanged) =====
         cache_key = f"customer_segmentation_analysis:{start_date or 'null'}:{end_date or 'null'}"
         cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
         cache.set(cache_key + ":insight", "Processing...", timeout=3600)
@@ -2330,7 +2397,6 @@ def customer_segmentation_analysis(request):
             }, start_date, end_date, None, cache_key, "customer_segmentation_analysis")
         ).start()
 
-        # ===== FINAL RESPONSE =====
         return Response({
             "customer_rfm": rfm.round(2).to_dict(orient="records"),
             "summary": {
@@ -2647,104 +2713,104 @@ def list_all_products(request):
 #         "data_key": cache_key
 #     })
 
-# @api_view(["GET"])
-# def invoice_trend_and_conversion(request):
-#     """
-#     Provides:
-#     - Invoice value trend (monthly total invoice value)
-#     - Invoice-to-order conversion rate (percentage of orders that were invoiced)
-#     """
-#     start_date = request.GET.get("start_date")
-#     end_date = request.GET.get("end_date")
+@api_view(["GET"])
+def invoice_trend_and_conversion(request):
+    """
+    Provides:
+    - Invoice value trend (monthly total invoice value)
+    - Invoice-to-order conversion rate (percentage of orders that were invoiced)
+    """
+    start_date = request.GET.get("start_date")
+    end_date = request.GET.get("end_date")
 
-#     try:
-#         sales_df = pd.read_excel(EXCEL_PATH, sheet_name="salesData")
-#         invoice_df = pd.read_excel(EXCEL_PATH, sheet_name="invoiceData")
-#     except Exception as e:
-#         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
+    try:
+        sales_df = pd.read_excel(EXCEL_PATH, sheet_name="salesData")
+        invoice_df = pd.read_excel(EXCEL_PATH, sheet_name="invoiceData")
+    except Exception as e:
+        return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
 
-#     # --- Prepare Dates & Clean Columns ---
-#     for df in [sales_df, invoice_df]:
-#         df.columns = df.columns.str.strip().str.title()  # Normalize headers
-#         df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
-#         df["Net Extended Line Cost"] = pd.to_numeric(df.get("Net Extended Line Cost", 0), errors="coerce").fillna(0)
-#         df["Requested Qty"] = pd.to_numeric(df.get("Requested Qty", 0), errors="coerce").fillna(0)
+    # --- Prepare Dates & Clean Columns ---
+    for df in [sales_df, invoice_df]:
+        df.columns = df.columns.str.strip().str.title()  # Normalize headers
+        df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
+        df["Net Extended Line Cost"] = pd.to_numeric(df.get("Net Extended Line Cost", 0), errors="coerce").fillna(0)
+        df["Requested Qty"] = pd.to_numeric(df.get("Requested Qty", 0), errors="coerce").fillna(0)
 
-#     # --- Filter by Date Range ---
-#     if start_date:
-#         start_date = pd.to_datetime(start_date)
-#         sales_df = sales_df[sales_df["Created Date"] >= start_date]
-#         invoice_df = invoice_df[invoice_df["Created Date"] >= start_date]
-#     if end_date:
-#         end_date = pd.to_datetime(end_date)
-#         sales_df = sales_df[sales_df["Created Date"] <= end_date]
-#         invoice_df = invoice_df[invoice_df["Created Date"] <= end_date]
+    # --- Filter by Date Range ---
+    if start_date:
+        start_date = pd.to_datetime(start_date)
+        sales_df = sales_df[sales_df["Created Date"] >= start_date]
+        invoice_df = invoice_df[invoice_df["Created Date"] >= start_date]
+    if end_date:
+        end_date = pd.to_datetime(end_date)
+        sales_df = sales_df[sales_df["Created Date"] <= end_date]
+        invoice_df = invoice_df[invoice_df["Created Date"] <= end_date]
 
-#     if sales_df.empty and invoice_df.empty:
-#         return Response({"message": "No data available for the selected period."}, status=200)
+    if sales_df.empty and invoice_df.empty:
+        return Response({"message": "No data available for the selected period."}, status=200)
 
-#     # --- 1️⃣ Invoice Value Trend ---
-#     invoice_trend = (
-#         invoice_df.groupby(invoice_df["Created Date"].dt.to_period("M"))["Net Extended Line Cost"]
-#         .sum()
-#         .reset_index()
-#     )
-#     invoice_trend.columns = ["Month", "Total Invoice Value"]
-#     invoice_trend["Month"] = invoice_trend["Month"].astype(str)
-#     invoice_trend["Total Invoice Value"] = invoice_trend["Total Invoice Value"].round(2)
+    # --- 1️⃣ Invoice Value Trend ---
+    invoice_trend = (
+        invoice_df.groupby(invoice_df["Created Date"].dt.to_period("M"))["Net Extended Line Cost"]
+        .sum()
+        .reset_index()
+    )
+    invoice_trend.columns = ["Month", "Total Invoice Value"]
+    invoice_trend["Month"] = invoice_trend["Month"].astype(str)
+    invoice_trend["Total Invoice Value"] = invoice_trend["Total Invoice Value"].round(2)
 
-#     # --- 2️⃣ Overall Conversion Rate (clean linkage) ---
-#     total_orders = sales_df["Order Number"].nunique() if "Order Number" in sales_df.columns else 0
-#     total_invoices = invoice_df["Invoice Number"].nunique() if "Invoice Number" in invoice_df.columns else 0
+    # --- 2️⃣ Overall Conversion Rate (clean linkage) ---
+    total_orders = sales_df["Order Number"].nunique() if "Order Number" in sales_df.columns else 0
+    total_invoices = invoice_df["Invoice Number"].nunique() if "Invoice Number" in invoice_df.columns else 0
 
-#     # Clean and match order references
-#     if "Order Reference" in invoice_df.columns and "Order Number" in sales_df.columns:
-#         invoice_df["Order Reference"] = invoice_df["Order Reference"].astype(str).str.strip().str.upper()
-#         sales_df["Order Number"] = sales_df["Order Number"].astype(str).str.strip().str.upper()
+    # Clean and match order references
+    if "Order Reference" in invoice_df.columns and "Order Number" in sales_df.columns:
+        invoice_df["Order Reference"] = invoice_df["Order Reference"].astype(str).str.strip().str.upper()
+        sales_df["Order Number"] = sales_df["Order Number"].astype(str).str.strip().str.upper()
 
-#         matched_orders = sales_df[sales_df["Order Number"].isin(invoice_df["Order Reference"])]["Order Number"].nunique()
-#         conversion_rate = (matched_orders / total_orders * 100) if total_orders > 0 else 0
-#     else:
-#         matched_orders = 0
-#         conversion_rate = 0
+        matched_orders = sales_df[sales_df["Order Number"].isin(invoice_df["Order Reference"])]["Order Number"].nunique()
+        conversion_rate = (matched_orders / total_orders * 100) if total_orders > 0 else 0
+    else:
+        matched_orders = 0
+        conversion_rate = 0
 
-#     # --- 3️⃣ Monthly Comparison (Orders vs Invoices) ---
-#     order_trend = (
-#         sales_df.groupby(sales_df["Created Date"].dt.to_period("M"))["Order Number"]
-#         .nunique()
-#         .reset_index()
-#         .rename(columns={"Order Number": "Unique Orders"})
-#     )
+    # --- 3️⃣ Monthly Comparison (Orders vs Invoices) ---
+    order_trend = (
+        sales_df.groupby(sales_df["Created Date"].dt.to_period("M"))["Order Number"]
+        .nunique()
+        .reset_index()
+        .rename(columns={"Order Number": "Unique Orders"})
+    )
 
-#     invoice_count_trend = (
-#         invoice_df.groupby(invoice_df["Created Date"].dt.to_period("M"))["Invoice Number"]
-#         .nunique()
-#         .reset_index()
-#         .rename(columns={"Invoice Number": "Unique Invoices"})
-#     )
+    invoice_count_trend = (
+        invoice_df.groupby(invoice_df["Created Date"].dt.to_period("M"))["Invoice Number"]
+        .nunique()
+        .reset_index()
+        .rename(columns={"Invoice Number": "Unique Invoices"})
+    )
 
-#     trend_comparison = pd.merge(order_trend, invoice_count_trend, on="Created Date", how="outer").fillna(0)
-#     trend_comparison["Created Date"] = trend_comparison["Created Date"].astype(str)
-#     trend_comparison["Conversion Rate (%)"] = (
-#         (trend_comparison["Unique Invoices"] / trend_comparison["Unique Orders"].replace(0, pd.NA)) * 100
-#     ).round(2)
+    trend_comparison = pd.merge(order_trend, invoice_count_trend, on="Created Date", how="outer").fillna(0)
+    trend_comparison["Created Date"] = trend_comparison["Created Date"].astype(str)
+    trend_comparison["Conversion Rate (%)"] = (
+        (trend_comparison["Unique Invoices"] / trend_comparison["Unique Orders"].replace(0, pd.NA)) * 100
+    ).round(2)
 
-#     # --- Final Summary ---
-#     summary = {
-#         "total_orders": int(total_orders),
-#         "total_invoices": int(total_invoices),
-#         "invoiced_orders": int(matched_orders),
-#         "uninvoiced_orders": int(total_orders - matched_orders),
-#         "overall_conversion_rate (%)": round(conversion_rate, 2),
-#         "period_start": str(start_date.date()) if start_date else None,
-#         "period_end": str(end_date.date()) if end_date else None,
-#     }
+    # --- Final Summary ---
+    summary = {
+        "total_orders": int(total_orders),
+        "total_invoices": int(total_invoices),
+        "invoiced_orders": int(matched_orders),
+        "uninvoiced_orders": int(total_orders - matched_orders),
+        "overall_conversion_rate (%)": round(conversion_rate, 2),
+        "period_start": str(start_date.date()) if start_date else None,
+        "period_end": str(end_date.date()) if end_date else None,
+    }
 
-#     return Response({
-#         "invoice_value_trend": invoice_trend.to_dict(orient="records"),
-#         "monthly_order_invoice_comparison": trend_comparison.to_dict(orient="records"),
-#         "summary": summary
-#     })
+    return Response({
+        "invoice_value_trend": invoice_trend.to_dict(orient="records"),
+        "monthly_order_invoice_comparison": trend_comparison.to_dict(orient="records"),
+        "summary": summary
+    })
 @api_view(["GET"])
 def invoice_trend_and_conversion(request):
     """
