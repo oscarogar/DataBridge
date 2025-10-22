@@ -29,6 +29,10 @@ urlpatterns = [
     
     path('get-insights-and-analytics/', views.get_sales_insight_result),
     
+    path("invoice/trend/conversion/", views.invoice_trend_and_conversion),
+    path('product/performance/', views.product_performance_analysis),
+    path('operations/metrics/', views.operations_metrics),
+    
     
     
     
