@@ -739,6 +739,8 @@ def sales_trend_analytics(request):
         return Response({"error": f"Failed to compute trend analysis: {str(e)}"}, status=500)
 
 
+
+'''FINANCIAL ANALYTICS'''
 @api_view(["GET"])
 def profit_margin_analytics(request):
     period = request.GET.get("period", "monthly")
@@ -1031,6 +1033,11 @@ def cost_analysis(request):
         },
         "data_key": cache_key
     })
+
+
+
+
+
 
 @api_view(['GET'])
 def sales_summary(request):
