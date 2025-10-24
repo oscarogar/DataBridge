@@ -154,6 +154,7 @@ def load_dataset(file_path=DATA_FILE, date_column_candidates=None):
             .str.replace(" ", "_")
             .str.replace(r"[^\w_]", "", regex=True)
             .str.lower()
+            .str.replace(r"_+$", "", regex=True)
         )
 
         # === Detect date columns ===
