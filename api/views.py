@@ -17,7 +17,7 @@ import sys
 from django.core.cache import cache
 import hashlib
 import json
-from .utils import compute_rfm, compute_clv, compute_churn
+from .utils import compute_rfm, compute_clv, compute_churn, load_dataset
 def python_version_view(request):
     return JsonResponse({"python_version": sys.version})
 EXCEL_PATH = os.path.join(os.path.dirname(__file__), 'data/data_adjusted.xlsx')
@@ -406,108 +406,6 @@ def get_sub_frequency(main_freq):
     else:
         return "D", "%Y-%m-%d"  # default fallback
 
-
-@api_view(["GET"])
-def sales_analytics(request):
-    period = request.GET.get("period", "monthly")
-    start_date = request.GET.get("start_date")
-    end_date = request.GET.get("end_date")
-
-    try:
-        combined_df, sales_df, invoice_df = load_data()
-        df_all = combined_df
-    except Exception as e:
-        return Response({"error": f"Failed to load data: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    # Clean and prepare data
-    df_all["Net Extended Line Cost"] = df_all["Net Extended Line Cost"].apply(parse_float)
-    df_all["Cost Price"] = df_all["Cost Price"].apply(parse_float)
-    df_all["Created Date"] = pd.to_datetime(df_all["Created Date"])
-
-    try:
-        start_date_dt = pd.to_datetime(start_date) if start_date else df_all["Created Date"].min()
-        end_date_dt = pd.to_datetime(end_date) if end_date else df_all["Created Date"].max()
-    except:
-        return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
-
-    df_current = df_all[(df_all["Created Date"] >= start_date_dt) & (df_all["Created Date"] <= end_date_dt)].copy()
-
-    if period == "daily":
-        df_current["Period"] = df_current["Created Date"].dt.date
-        delta = timedelta(days=1)
-    elif period == "weekly":
-        df_current["Period"] = df_current["Created Date"].dt.to_period("W").apply(lambda r: r.start_time)
-        delta = timedelta(weeks=1)
-    elif period == "monthly":
-        df_current["Period"] = df_current["Created Date"].dt.to_period("M").apply(lambda r: r.start_time)
-        delta = relativedelta(months=1)
-    elif period == "yearly":
-        df_current["Period"] = df_current["Created Date"].dt.to_period("Y").apply(lambda r: r.start_time)
-        delta = relativedelta(years=1)
-    else:
-        return Response({"error": "Invalid period. Use 'daily', 'weekly', 'monthly', or 'yearly'."}, status=status.HTTP_400_BAD_REQUEST)
-
-    total_sales_value = df_current["Net Extended Line Cost"].sum()
-    total_orders = df_current["Order Number"].nunique()
-    avg_order_value = total_sales_value / total_orders if total_orders else 0
-
-    range_length = end_date_dt - start_date_dt
-    previous_start = start_date_dt - range_length
-    previous_end = start_date_dt
-
-    df_previous = df_all[(df_all["Created Date"] >= previous_start) & (df_all["Created Date"] < previous_end)]
-    sales_previous = df_previous["Net Extended Line Cost"].sum()
-    sales_growth = ((total_sales_value - sales_previous) / abs(sales_previous) * 100) if sales_previous else (100.0 if total_sales_value > 0 else 0)
-
-    performance_breakdown = (
-        df_current.groupby("Period")["Net Extended Line Cost"]
-        .sum().sort_index().reset_index()
-        .rename(columns={"Net Extended Line Cost": "sales"})
-    )
-    performance_breakdown["sales"] = performance_breakdown["sales"].round(2)
-
-    top_products = (
-        df_current.groupby("Product Description")["Net Extended Line Cost"]
-        .sum().sort_values(ascending=False).head(5).reset_index()
-        .rename(columns={"Net Extended Line Cost": "sales"})
-    )
-    top_products["sales"] = top_products["sales"].round(2)
-
-    customer_value = (
-        df_current.groupby("Sender Name")["Net Extended Line Cost"]
-        .sum().sort_values(ascending=False).reset_index()
-        .rename(columns={"Net Extended Line Cost": "value"})
-    )
-    customer_value["value"] = customer_value["value"].round(2)
-
-    summary_payload = {
-        "total_sales_value": round(total_sales_value, 2),
-        "total_orders": total_orders,
-        "avg_order_value": round(avg_order_value, 2),
-        "sales_growth_percent": round(sales_growth, 2),
-        "sales_performance_breakdown": performance_breakdown.to_dict(orient="records"),
-        "top_products": top_products.to_dict(orient="records"),
-        "customer_value": customer_value.to_dict(orient="records"),
-    }
-
-    cache_key = generate_ai_cache_key(summary_payload, start_date_dt, end_date_dt, period)
-
-    # Set cache status and run AI generation in background
-    cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-    cache.set(cache_key + ":insight", "Processing...", timeout=3600)
-    cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
-
-    # threading.Thread(target=generate_insight_and_forecast_background, args=(summary_payload, start_date_dt, end_date_dt, period, cache_key)).start()
-    threading.Thread(
-    target=generate_insight_and_forecast_background,args=(summary_payload, start_date_dt, end_date_dt, period, cache_key, "sales_analytics")).start()
-    
-    return Response({
-        **summary_payload,
-        "ai_status": "processing",
-        "data_key": cache_key
-    })
-
-
 def generate_insight_and_forecast_background(data_summary, start_date, end_date, period, cache_key, view_name="default"):
     try:
         insight_prompt, forecast_prompt = get_prompts_for_view(view_name, start_date, end_date, period)
@@ -522,7 +420,6 @@ def generate_insight_and_forecast_background(data_summary, start_date, end_date,
         cache.set(cache_key + ":insight", f"Insight generation failed: {str(e)}", timeout=3600)
         cache.set(cache_key + ":forecast", f"Forecast generation failed: {str(e)}", timeout=3600)
         cache.set(cache_key + ":status", {"insight": "failed", "forecast": "failed"}, timeout=3600)
-
 
 @api_view(["GET"])
 def get_sales_insight_result(request):
@@ -540,172 +437,307 @@ def get_sales_insight_result(request):
         "status": status_info
     })
 
+'''SALES ANALYTICS'''
+
+@api_view(["GET"])
+def sales_analytics(request):
+    try:
+        # ===== INPUT VALIDATION =====
+        start_date_str = request.GET.get("start_date")
+        end_date_str = request.GET.get("end_date")
+        period = request.GET.get("period", "monthly").lower()
+
+        if not start_date_str or not end_date_str:
+            return Response(
+                {"error": "start_date and end_date are required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+        except:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+
+        # ===== LOAD DATASET =====
+        df = load_dataset()
+
+        # ===== REQUIRED COLUMNS =====
+        required_cols = [
+            "main_date",
+            "order_number",
+            "net_extended_line_cost",
+            "product_description",
+            "store_gln",
+            "store_name"
+        ]
+        for col in required_cols:
+            if col not in df.columns:
+                return Response({"error": f"Missing required column: {col}"}, status=500)
+
+        # ===== FILTER DATE RANGE =====
+        df = df[
+            (df["main_date"].dt.date >= start_date)
+            & (df["main_date"].dt.date <= end_date)
+        ].copy()
+
+        if df.empty:
+            return Response({"error": "No data found for this period."}, status=404)
+
+        # ===== BASIC METRICS =====
+        total_sales = df["net_extended_line_cost"].sum()
+        total_orders = df["order_number"].nunique()
+        avg_order_value = total_sales / total_orders if total_orders else 0
+
+        # ===== PERIOD GROUPING =====
+        if period == "weekly":
+            df["period"] = df["main_date"].dt.to_period("W").apply(lambda r: r.start_time)
+            delta = timedelta(weeks=1)
+        elif period == "monthly":
+            df["period"] = df["main_date"].dt.to_period("M").apply(lambda r: r.start_time)
+            delta = relativedelta(months=1)
+        elif period == "yearly":
+            df["period"] = df["main_date"].dt.to_period("Y").apply(lambda r: r.start_time)
+            delta = relativedelta(years=1)
+        else:
+            return Response({"error": "Invalid period. Use weekly, monthly, or yearly."}, status=400)
+
+        performance = (
+            df.groupby("period")["net_extended_line_cost"]
+            .sum().reset_index().sort_values("period")
+        )
+
+        # ===== GROWTH CALCULATION =====
+        if len(performance) > 1:
+            last = performance["net_extended_line_cost"].iloc[-1]
+            prev = performance["net_extended_line_cost"].iloc[-2]
+            growth = ((last - prev) / prev) * 100 if prev != 0 else 0
+        else:
+            growth = 0
+
+        # ===== BEST PRODUCTS =====
+        best_products = (
+            df.groupby("product_description")["net_extended_line_cost"]
+            .sum().reset_index()
+            .sort_values("net_extended_line_cost", ascending=False)
+            .head(5)
+            .rename(columns={"net_extended_line_cost": "sales"})
+            .to_dict(orient="records")
+        )
+
+        # ===== TOP STORES =====
+        top_stores = (
+            df.groupby(["store_name", "store_gln"])["net_extended_line_cost"]
+            .sum().reset_index()
+            .sort_values("net_extended_line_cost", ascending=False)
+            .head(5)
+            .rename(columns={"net_extended_line_cost": "sales"})
+            .to_dict(orient="records")
+        )
+
+        # ===== COMPILE SUMMARY PAYLOAD =====
+        summary_payload = {
+            "total_sales_value": round(total_sales, 2),
+            "total_orders": int(total_orders),
+            "avg_order_value": round(avg_order_value, 2),
+            "sales_growth_percent": round(growth, 2),
+            "sales_performance_breakdown": performance.to_dict(orient="records"),
+            "top_products": best_products,
+            "customer_value": top_stores,  # B2B: store-level customers
+        }
+
+        # ====== CACHE KEY + AI BACKGROUND GENERATION ======
+        cache_key = generate_ai_cache_key(summary_payload, start_date, end_date, period)
+
+        # Initialize cache status for async AI processing
+        cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+        cache.set(cache_key + ":insight", "Processing...", timeout=3600)
+        cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
+
+        # Background AI generation thread
+        threading.Thread(
+            target=generate_insight_and_forecast_background,
+            args=(summary_payload, start_date, end_date, period, cache_key, "sales_analytics"),
+        ).start()
+
+        # ===== FINAL RESPONSE =====
+        return Response({
+            **summary_payload,
+            "ai_status": "processing",
+            "data_key": cache_key,
+        }, status=200)
+
+    except Exception as e:
+        return Response({"error": f"Failed to compute analytics: {str(e)}"}, status=500)
+
 @api_view(["GET"])
 def sales_trend_analytics(request):
-    period = request.GET.get("period", "monthly")
-    start_date = request.GET.get("start_date")
-    end_date = request.GET.get("end_date")
-
     try:
-        combined_df, sales_df, invoice_df = load_data()
-        df = combined_df
-    except Exception as e:
-        return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
+        # ====== INPUTS ======
+        period = request.GET.get("period", "monthly").lower()
+        start_date_str = request.GET.get("start_date")
+        end_date_str = request.GET.get("end_date")
 
-    df["Created Date"] = pd.to_datetime(df["Created Date"])
-    df["Net Extended Line Cost"] = df["Net Extended Line Cost"].apply(parse_float)
+        # ====== LOAD DATA ======
+        df = load_dataset()
+        if df.empty:
+            return Response({"error": "Dataset is empty or not loaded correctly."}, status=500)
 
-    today = df["Created Date"].max().normalize()
+        # ====== ENSURE REQUIRED COLUMNS EXIST ======
+        # All columns are lowercase and underscore-separated
+        numeric_col = "net_extended_line_cost"
+        region_col = "region"
+        channel_col = "channel"
+        customer_col = "customer_type"
+        product_col = "product_description"
 
-    # Determine time range
-    if start_date and end_date:
-        try:
-            start_current = pd.to_datetime(start_date)
-            end_current = pd.to_datetime(end_date)
-        except Exception:
-            return Response({"error": "Invalid start_date or end_date format. Use YYYY-MM-DD."}, status=400)
+        # Convert main date + cost to usable formats
+        df["main_date"] = pd.to_datetime(df["main_date"], errors="coerce")
+        df[numeric_col] = pd.to_numeric(df.get(numeric_col, 0), errors="coerce").fillna(0)
 
-        duration = end_current - start_current
-        start_previous = start_current - duration - timedelta(days=1)
-        end_previous = start_current - timedelta(days=1)
+        today = df["main_date"].max().normalize()
 
-        days = duration.days
-        if days <= 7:
-            freq, label_format = "D", "%Y-%m-%d"
-        elif days <= 31:
-            freq, label_format = "W-MON", "Week %W"
-        elif days <= 365:
-            freq, label_format = "M", "%B"
+        # ====== PERIOD DETERMINATION ======
+        if start_date_str and end_date_str:
+            try:
+                start_current = pd.to_datetime(start_date_str)
+                end_current = pd.to_datetime(end_date_str)
+            except Exception:
+                return Response({"error": "Invalid start_date or end_date. Use YYYY-MM-DD."}, status=400)
+
+            duration = end_current - start_current
+            start_previous = start_current - duration - timedelta(days=1)
+            end_previous = start_current - timedelta(days=1)
         else:
-            freq, label_format = "Q", "Q%q %Y"
-    else:
-        if period == "weekly":
-            start_current = today - timedelta(days=today.weekday())
-            end_current = start_current + timedelta(days=6)
-            start_previous = start_current - timedelta(weeks=1)
-            end_previous = start_current - timedelta(days=1)
-            freq, label_format = "D", "%Y-%m-%d"
-        elif period == "monthly":
-            start_current = today.replace(day=1)
-            end_current = (start_current + relativedelta(months=1)) - timedelta(days=1)
-            start_previous = start_current - relativedelta(months=1)
-            end_previous = start_current - timedelta(days=1)
-            freq, label_format = "W-MON", "Week %W"
-        elif period == "yearly":
-            start_current = today.replace(month=1, day=1)
-            end_current = today.replace(month=12, day=31)
-            start_previous = start_current - relativedelta(years=1)
-            end_previous = start_current - timedelta(days=1)
-            freq, label_format = "M", "%B"
-        else:
-            return Response({"error": "Missing or invalid period. Provide either a period or start_date and end_date."}, status=400)
+            if period == "weekly":
+                start_current = today - timedelta(days=today.weekday())
+                end_current = start_current + timedelta(days=6)
+                start_previous = start_current - timedelta(weeks=1)
+                end_previous = start_current - timedelta(days=1)
+                freq, label_format = "D", "%Y-%m-%d"
+            elif period == "monthly":
+                start_current = today.replace(day=1)
+                end_current = (start_current + relativedelta(months=1)) - timedelta(days=1)
+                start_previous = start_current - relativedelta(months=1)
+                end_previous = start_current - timedelta(days=1)
+                freq, label_format = "W-MON", "Week %W"
+            elif period == "yearly":
+                start_current = today.replace(month=1, day=1)
+                end_current = today.replace(month=12, day=31)
+                start_previous = start_current - relativedelta(years=1)
+                end_previous = start_current - timedelta(days=1)
+                freq, label_format = "M", "%B"
+            else:
+                return Response({"error": "Invalid or missing period."}, status=400)
 
-    df_current = df[(df["Created Date"] >= start_current) & (df["Created Date"] <= end_current)]
-    df_previous = df[(df["Created Date"] >= start_previous) & (df["Created Date"] <= end_previous)]
+        # Dynamically choose frequency if date range provided
+        if start_date_str and end_date_str:
+            days = (end_current - start_current).days
+            if days <= 7:
+                freq, label_format = "D", "%Y-%m-%d"
+            elif days <= 31:
+                freq, label_format = "W-MON", "Week %W"
+            elif days <= 365:
+                freq, label_format = "M", "%B"
+            else:
+                freq, label_format = "Q", "Q%q %Y"
 
-    if df_current.empty:
-        return Response({"error": "No sales records found for the current period."}, status=404)
-    if df_previous.empty:
-        return Response({"error": "No sales records found for the previous period."}, status=404)
+        # ====== SLICE PERIODS ======
+        df_current = df[(df["main_date"] >= start_current) & (df["main_date"] <= end_current)]
+        df_previous = df[(df["main_date"] >= start_previous) & (df["main_date"] <= end_previous)]
 
-    total_sales_current = df_current["Net Extended Line Cost"].sum()
-    total_sales_previous = df_previous["Net Extended Line Cost"].sum()
+        if df_current.empty:
+            return Response({"error": "No sales records found for the current period."}, status=404)
+        if df_previous.empty:
+            return Response({"error": "No sales records found for the previous period."}, status=404)
 
-    growth_percent = (
-        ((total_sales_current - total_sales_previous) / total_sales_previous) * 100
-        if total_sales_previous else (100.0 if total_sales_current else 0.0)
-    )
-
-    def breakdown(df_slice, freq, label_format):
-        df_slice = df_slice.copy()
-        df_slice["Group"] = df_slice["Created Date"].dt.to_period(freq).dt.start_time
-        summary = df_slice.groupby("Group")["Net Extended Line Cost"].sum().reset_index()
-        summary.columns = ["period", "sales"]
-        summary["label"] = summary["period"].dt.strftime(label_format)
-        return summary.sort_values("period")
-
-    current_breakdown = breakdown(df_current, freq, label_format)
-    previous_breakdown = breakdown(df_previous, freq, label_format)
-
-    growth_trend_df = current_breakdown.copy()
-    growth_trend_df["growth_percent"] = growth_trend_df["sales"].pct_change() * 100
-    growth_trend_df["growth_percent"] = growth_trend_df["growth_percent"].round(2).fillna(0.0)
-
-    sub_freq, sub_label_format = get_sub_frequency(freq)
-    detailed_current_breakdown = breakdown(df_current, sub_freq, sub_label_format)
-    detailed_previous_breakdown = breakdown(df_previous, sub_freq, sub_label_format)
-
-    best_time = current_breakdown.sort_values("sales", ascending=False).iloc[0].to_dict() if not current_breakdown.empty else {}
-
-    product_sales = (
-        df_current.groupby("Product Description")["Net Extended Line Cost"]
-        .sum()
-        .sort_values(ascending=False)
-        .reset_index()
-        .rename(columns={"Net Extended Line Cost": "sales"})
-    )
-
-    quarterly_breakdown = []
-    if (period == "yearly") or (start_date and end_date and (end_current - start_current).days > 180):
-        df_current["Quarter"] = df_current["Created Date"].dt.to_period("Q").dt.start_time
-        quarterly_breakdown = (
-            df_current.groupby("Quarter")["Net Extended Line Cost"]
-            .sum()
-            .reset_index()
-            .rename(columns={"Net Extended Line Cost": "sales", "Quarter": "quarter"})
+        # ====== AGGREGATE SALES ======
+        total_sales_current = df_current[numeric_col].sum()
+        total_sales_previous = df_previous[numeric_col].sum()
+        growth_percent = (
+            ((total_sales_current - total_sales_previous) / total_sales_previous) * 100
+            if total_sales_previous else (100.0 if total_sales_current else 0.0)
         )
-        quarterly_breakdown["quarter"] = quarterly_breakdown["quarter"].dt.strftime("Q%q %Y")
 
-    # AI Summary Payload
-    summary_payload = {
-        "period": period or "custom",
-        "start_current": str(start_current.date()),
-        "end_current": str(end_current.date()),
-        "total_sales_current": round(total_sales_current, 2),
-        "total_sales_previous": round(total_sales_previous, 2),
-        "period_growth_percent": round(growth_percent, 2),
-        "product_sales_breakdown": product_sales.round(2).to_dict(orient="records"),
-        "growth_trend": growth_trend_df[["label", "sales", "growth_percent"]].round(2).to_dict(orient="records"),
-        "best_time_period": {
-            "period": best_time.get("period"),
-            "sales": round(best_time.get("sales", 0), 2),
-            "label": best_time.get("label")
-        } if best_time else {},
-    }
+        # ====== BREAKDOWN FUNCTION ======
+        def breakdown(df_slice, freq, label_format):
+            df_slice = df_slice.copy()
+            df_slice["period"] = df_slice["main_date"].dt.to_period(freq).dt.start_time
+            summary = df_slice.groupby("period")[numeric_col].sum().reset_index()
+            summary.columns = ["period", "sales"]
+            summary["label"] = summary["period"].dt.strftime(label_format)
+            return summary.sort_values("period")
 
-    # AI Cache Key & Background Thread
-    cache_key = generate_ai_cache_key(summary_payload, start_current, end_current, period)
-    cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-    cache.set(cache_key + ":insight", "Processing...", timeout=3600)
-    cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
-    threading.Thread(target=generate_insight_and_forecast_background, args=(
-        summary_payload, start_current, end_current, period, cache_key, "sales_trend_analytics"
-    )).start()
+        current_breakdown = breakdown(df_current, freq, label_format)
+        previous_breakdown = breakdown(df_previous, freq, label_format)
 
-    return Response({
-        "period": period or "custom",
-        "start_current": start_current.date(),
-        "end_current": end_current.date(),
-        "start_previous": start_previous.date(),
-        "end_previous": end_previous.date(),
-        "total_sales_current": round(total_sales_current, 2),
-        "total_sales_previous": round(total_sales_previous, 2),
-        "period_growth_percent": round(growth_percent, 2),
-        "best_time_period": {
-            "period": best_time.get("period"),
-            "sales": round(best_time.get("sales", 0), 2),
-            "label": best_time.get("label")
-        } if best_time else {},
-        "current_period_breakdown": current_breakdown.round(2).to_dict(orient="records"),
-        "previous_period_breakdown": previous_breakdown.round(2).to_dict(orient="records"),
-        "detailed_current_period_breakdown": detailed_current_breakdown.round(2).to_dict(orient="records"),
-        "detailed_previous_period_breakdown": detailed_previous_breakdown.round(2).to_dict(orient="records"),
-        "quarterly_breakdown": quarterly_breakdown.round(2).to_dict(orient="records") if not isinstance(quarterly_breakdown, list) else quarterly_breakdown,
-        "product_sales_breakdown": product_sales.round(2).to_dict(orient="records"),
-        "growth_trend": growth_trend_df[["label", "sales", "growth_percent"]].round(2).to_dict(orient="records"),
-        "ai_status": "processing",
-        "data_key": cache_key
-    })
+        # ====== GROWTH TREND ======
+        growth_trend = current_breakdown.copy()
+        growth_trend["growth_percent"] = growth_trend["sales"].pct_change().fillna(0) * 100
+        growth_trend["growth_percent"] = growth_trend["growth_percent"].round(2)
+
+        # ====== TOP CATEGORIES ======
+        top_regions = df_current.groupby(region_col)[numeric_col].sum().nlargest(5).reset_index()
+        top_channels = df_current.groupby(channel_col)[numeric_col].sum().nlargest(5).reset_index()
+        top_customers = df_current.groupby(customer_col)[numeric_col].sum().nlargest(5).reset_index()
+        top_products = df_current.groupby(product_col)[numeric_col].sum().nlargest(5).reset_index()
+
+        # ====== BEST PERIOD ======
+        best_time = current_breakdown.sort_values("sales", ascending=False).iloc[0].to_dict()
+
+        # ====== QUARTERLY VIEW ======
+        quarterly_breakdown = []
+        if (period == "yearly") or ((end_current - start_current).days > 180):
+            df_current["quarter"] = df_current["main_date"].dt.to_period("Q").dt.start_time
+            quarterly_breakdown = (
+                df_current.groupby("quarter")[numeric_col].sum().reset_index()
+            )
+            quarterly_breakdown["quarter"] = quarterly_breakdown["quarter"].dt.strftime("Q%q %Y")
+
+        # ====== AI SUMMARY PAYLOAD ======
+        summary_payload = {
+            "period": period or "custom",
+            "start_current": str(start_current.date()),
+            "end_current": str(end_current.date()),
+            "total_sales_current": round(total_sales_current, 2),
+            "total_sales_previous": round(total_sales_previous, 2),
+            "period_growth_percent": round(growth_percent, 2),
+            "best_time_period": {
+                "period": str(best_time.get("period")),
+                "label": best_time.get("label"),
+                "sales": round(best_time.get("sales", 0), 2),
+            },
+            "growth_trend": growth_trend.round(2).to_dict(orient="records"),
+            "top_regions": top_regions.round(2).to_dict(orient="records"),
+            "top_channels": top_channels.round(2).to_dict(orient="records"),
+            "top_customers": top_customers.round(2).to_dict(orient="records"),
+            "top_products": top_products.round(2).to_dict(orient="records"),
+        }
+
+        # ====== AI BACKGROUND JOB ======
+        cache_key = generate_ai_cache_key(summary_payload, start_current, end_current, period)
+        cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+        cache.set(cache_key + ":insight", "Processing...", timeout=3600)
+        cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
+
+        threading.Thread(
+            target=generate_insight_and_forecast_background,
+            args=(summary_payload, start_current, end_current, period, cache_key, "sales_trend_analytics"),
+        ).start()
+
+        # ====== FINAL RESPONSE ======
+        return Response({
+            **summary_payload,
+            "current_period_breakdown": current_breakdown.round(2).to_dict(orient="records"),
+            "previous_period_breakdown": previous_breakdown.round(2).to_dict(orient="records"),
+            "quarterly_breakdown": quarterly_breakdown if len(quarterly_breakdown) else [],
+            "ai_status": "processing",
+            "data_key": cache_key,
+        })
+
+    except Exception as e:
+        return Response({"error": f"Failed to compute trend analysis: {str(e)}"}, status=500)
+
 
 @api_view(["GET"])
 def profit_margin_analytics(request):
