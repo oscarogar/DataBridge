@@ -20,12 +20,14 @@ urlpatterns = [
     
     path("order-analysis/", views.order_analysis),
     path("order-fulfillment-analysis/", views.order_fulfillment_analysis),
-    path("order-calculation-analysis/", views.order_calculation_analysis),
+    # path("order-calculation-analysis/", views.order_calculation_analysis),
     
     path("customer-segmentation-analysis/", views.customer_segmentation_analysis),
     path('customer-buying-patterns/', views.customer_purchase_pattern_analysis),
     
-    path("list-products/", views.list_all_products),
+    # path("list-products/", views.list_all_products),
+    path("inventory/", views.retail_inventory_analysis),
+    path('promotions/', views.promotion_analysis),
     
     path('get-insights-and-analytics/', views.get_sales_insight_result),
     
