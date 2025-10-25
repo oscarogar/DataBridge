@@ -3513,380 +3513,6 @@ def operations_metrics(request):
         "ai_status": "processing"
     })
 
-
-# @api_view(["GET"])
-# def finance_analytics(request):
-#     """
-#     Comprehensive finance analytics for large retail operations.
-#     Uses load_dataset() and the AI helpers generate_ai_cache_key + generate_insight_and_forecast_background.
-#     Accepts optional start_date, end_date, region, channel query params.
-#     """
-#     try:
-#         # load normalized dataset (columns already normalized by load_dataset)
-#         df = load_dataset()
-#     except Exception as e:
-#         return Response({"error": f"Failed to load dataset: {str(e)}"}, status=500)
-
-#     # parse query params
-#     start_date_q = request.GET.get("start_date")
-#     end_date_q = request.GET.get("end_date")
-#     region_q = request.GET.get("region")
-#     channel_q = request.GET.get("channel")
-
-#     # ensure date columns present
-#     # load_dataset sets df["main_date"] already; also try to preserve order_date/delivery_date if present
-#     if "main_date" not in df.columns:
-#         return Response({"error": "Dataset missing 'main_date' column (load_dataset must set it)."}, status=500)
-
-#     # normalize expected numeric columns (use names that load_dataset produces)
-#     numeric_map = {
-#         "gross_sales_before_discount": "gross_sales_before_discount",
-#         "net_extended_line_cost": "net_extended_line_cost",
-#         "profit_margin": "profit_margin",  # may be profit_margin or profit_margin_%, we try both below
-#         "discount": "discount",
-#         "requested_qty": "requested_qty",
-#         "operational_cost_total": "operational_cost_total",
-#         "logistics_cost_per_unit": "logistics_cost_per_unit",
-#         "inventory_level_before_sale": "inventory_level_before_sale",
-#         "forecasted_demand_next_period": "forecasted_demand_next_period",
-#         "actual_demand": "actual_demand",
-#         "lead_time_days": "lead_time_days"
-#     }
-
-#     # Some datasets use slightly different names; attempt common alternatives
-#     alt_names = {
-#         "profit_margin": ["profit_margin", "profit_margin_%", "profit_margin_(%)"],
-#         "lead_time_days": ["lead_time_days", "lead_time_(days)", "lead_time (days)", "lead_time"],
-#         "inventory_level_before_sale": ["inventory_level_before_sale", "inventory_level_(before_sale)", "inventory_level"],
-#         "forecasted_demand_next_period": ["forecasted_demand_next_period", "forecasted_demand_(next_period)"],
-#         "actual_demand": ["actual_demand", "actual_demand"],
-#         "operational_cost_total": ["operational_cost_total", "operational_cost_total"],
-#         "logistics_cost_per_unit": ["logistics_cost_per_unit", "logistics_cost_per_unit"],
-#     }
-
-#     # coerce numeric columns that exist
-#     for logical, candidates in alt_names.items():
-#         for name in candidates:
-#             if name in df.columns:
-#                 df[logical] = pd.to_numeric(df[name], errors="coerce").fillna(0)
-#                 break
-#         else:
-#             # if none found, create column with zeros
-#             df[logical] = 0
-
-#     # Also ensure a few core columns exist or create safe defaults
-#     if "gross_sales_before_discount" in df.columns:
-#         df["gross_sales_before_discount"] = pd.to_numeric(df["gross_sales_before_discount"], errors="coerce").fillna(0)
-#     else:
-#         df["gross_sales_before_discount"] = 0
-
-#     if "net_extended_line_cost" in df.columns:
-#         df["net_extended_line_cost"] = pd.to_numeric(df["net_extended_line_cost"], errors="coerce").fillna(0)
-#     else:
-#         df["net_extended_line_cost"] = 0
-
-#     if "requested_qty" in df.columns:
-#         df["requested_qty"] = pd.to_numeric(df["requested_qty"], errors="coerce").fillna(0)
-#     else:
-#         df["requested_qty"] = 0
-
-#     # date handling: convert main_date, order_date, delivery_date if present
-#     df["main_date"] = pd.to_datetime(df["main_date"], errors="coerce")
-#     if "order_date" in df.columns:
-#         df["order_date"] = pd.to_datetime(df["order_date"], errors="coerce")
-#     else:
-#         df["order_date"] = df["main_date"]
-#     if "delivery_date" in df.columns:
-#         df["delivery_date"] = pd.to_datetime(df["delivery_date"], errors="coerce")
-#     else:
-#         df["delivery_date"] = pd.NaT
-
-#     # apply date filters (if supplied)
-#     try:
-#         if start_date_q:
-#             start_dt = pd.to_datetime(start_date_q)
-#         else:
-#             start_dt = df["main_date"].min()
-#         if end_date_q:
-#             end_dt = pd.to_datetime(end_date_q)
-#         else:
-#             end_dt = df["main_date"].max()
-#     except Exception as e:
-#         return Response({"error": f"Invalid date inputs: {str(e)}"}, status=400)
-
-#     # slice dataset
-#     df = df[(df["main_date"] >= start_dt) & (df["main_date"] <= end_dt)].copy()
-#     if df.empty:
-#         return Response({"message": "No financial data found in the selected date range."}, status=200)
-
-#     # apply region / channel filters (case-insensitive)
-#     if region_q and "region" in df.columns:
-#         df = df[df["region"].str.contains(region_q, case=False, na=False)]
-#     if channel_q and "channel" in df.columns:
-#         df = df[df["channel"].str.contains(channel_q, case=False, na=False)]
-
-#     if df.empty:
-#         return Response({"message": "No financial data found after applying filters."}, status=200)
-
-#     # === TOP-LEVEL KPIs ===
-#     total_revenue = df["gross_sales_before_discount"].sum()
-#     total_cost = df["net_extended_line_cost"].sum()
-#     total_profit = total_revenue - total_cost
-
-#     # profit margin: use profit_margin column if present and reasonable otherwise compute per-line
-#     if "profit_margin" in df.columns and df["profit_margin"].replace(0, np.nan).notna().any():
-#         avg_profit_margin = float(df["profit_margin"].replace(0, np.nan).mean() or 0)
-#     else:
-#         avg_profit_margin = (total_profit / total_revenue * 100) if total_revenue else 0
-
-#     avg_discount = float(df["discount"].mean()) if "discount" in df.columns else 0
-#     total_orders = int(df["order_number"].nunique()) if "order_number" in df.columns else 0
-#     total_units = float(df["requested_qty"].sum())
-
-#     # === Profitability breakdowns ===
-#     def profit_series(group_cols):
-#         # returns dict grouping -> profit
-#         return (
-#             df.groupby(group_cols)
-#             .apply(lambda x: (x["gross_sales_before_discount"].sum() - x["net_extended_line_cost"].sum()))
-#             .round(2)
-#             .to_dict()
-#         )
-
-#     profit_by_region = profit_series("region") if "region" in df.columns else {}
-#     profit_by_category = profit_series("product_category") if "product_category" in df.columns else {}
-#     profit_by_channel = profit_series("channel") if "channel" in df.columns else {}
-#     profit_by_supplier = profit_series("supplier_name") if "supplier_name" in df.columns else {}
-
-#     # === Cost & Efficiency ===
-#     avg_operational_cost = float(df["operational_cost_total"].replace(0, np.nan).mean() or 0)
-#     avg_logistics_cost_per_unit = float(df["logistics_cost_per_unit"].replace(0, np.nan).mean() or 0)
-
-#     # inventory turnover: COGS / avg inventory (COGS ~ total_cost)
-#     avg_inventory = float(df["inventory_level_before_sale"].replace(0, np.nan).mean() or np.nan)
-#     inventory_turnover = (total_cost / avg_inventory) if avg_inventory and not np.isnan(avg_inventory) else None
-
-#     # lead time
-#     avg_lead_time = float(df["lead_time_days"].replace(0, np.nan).mean() or 0)
-
-#     # days to delivery (proxy for cash conversion)
-#     df["days_to_delivery"] = (df["delivery_date"] - df["order_date"]).dt.days
-#     avg_days_to_delivery = round(float(df["days_to_delivery"].replace(0, np.nan).mean() or 0), 1)
-
-#     # revenue by payment method
-#     revenue_by_payment = df.groupby(df["payment_method"].fillna("UNKNOWN"))["gross_sales_before_discount"].sum().round(2).to_dict()
-
-#     # === Forecast accuracy ===
-#     if ("forecasted_demand_next_period" in df.columns) and ("actual_demand" in df.columns):
-#         fdf = df[df["actual_demand"] > 0].copy()
-#         if not fdf.empty:
-#             fdf["forecast_accuracy_pct"] = 100 * (1 - (fdf["forecasted_demand_next_period"] - fdf["actual_demand"]).abs() / fdf["actual_demand"].replace(0, np.nan))
-#             forecast_accuracy = round(float(fdf["forecast_accuracy_pct"].mean()), 1)
-#         else:
-#             forecast_accuracy = None
-#     else:
-#         forecast_accuracy = None
-
-#     # === Trends (monthly) ===
-#     monthly = (
-#         df.set_index("main_date")
-#           .resample("ME")[["gross_sales_before_discount", "net_extended_line_cost"]]
-#           .sum()
-#           .reset_index()
-#     )
-#     monthly["profit"] = monthly["gross_sales_before_discount"] - monthly["net_extended_line_cost"]
-#     monthly_trend = monthly.assign(month=monthly["main_date"].dt.strftime("%Y-%m")).to_dict(orient="records")
-
-#     # === Prepare payload and kick off AI insight (using your helpers exactly) ===
-#     summary_payload = {
-#         "summary": {
-#             "total_revenue": round(float(total_revenue), 2),
-#             "total_cost": round(float(total_cost), 2),
-#             "total_profit": round(float(total_profit), 2),
-#             "average_profit_margin_pct": round(float(avg_profit_margin), 2),
-#             "average_discount_pct": round(float(avg_discount), 2),
-#             "total_orders": total_orders,
-#             "total_units_sold": round(total_units, 2),
-#         },
-#         "profitability": {
-#             "by_region": profit_by_region,
-#             "by_category": profit_by_category,
-#             "by_channel": profit_by_channel,
-#             "by_supplier": profit_by_supplier,
-#         },
-#         "efficiency": {
-#             "avg_operational_cost": round(float(avg_operational_cost), 2),
-#             "avg_logistics_cost_per_unit": round(float(avg_logistics_cost_per_unit), 2),
-#             "inventory_turnover": round(float(inventory_turnover), 2) if inventory_turnover else None,
-#             "avg_lead_time_days": round(float(avg_lead_time), 1),
-#             "avg_days_to_delivery": avg_days_to_delivery
-#         },
-#         "cashflow": {
-#             "revenue_by_payment_method": revenue_by_payment
-#         },
-#         "forecasting": {
-#             "forecast_accuracy_pct": forecast_accuracy
-#         },
-#         "trends": monthly_trend
-#     }
-
-#     # Use your AI helpers signature exactly as you provided
-#     cache_key = generate_ai_cache_key(summary_payload, pd.to_datetime(start_dt), pd.to_datetime(end_dt), "operations")
-#     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-#     cache.set(cache_key + ":insight", "Processing...", timeout=3600)
-#     cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
-
-#     # start background insight/forecast thread (match your arg order)
-#     threading.Thread(
-#         target=generate_insight_and_forecast_background,
-#         args=(
-#             summary_payload,
-#             str(pd.to_datetime(start_dt).date()),
-#             str(pd.to_datetime(end_dt).date()),
-#             "operations",
-#             cache_key,
-#             "operations_metrics",
-#         ),
-#         daemon=True
-#     ).start()
-
-#     # === Response ===
-#     return Response({
-#         "summary": summary_payload["summary"],
-#         "profitability": summary_payload["profitability"],
-#         "efficiency": summary_payload["efficiency"],
-#         "cashflow": summary_payload["cashflow"],
-#         "forecasting": summary_payload["forecasting"],
-#         "trends": summary_payload["trends"],
-#         "data_key": cache_key,
-#         "ai_status": "processing"
-#     })
-
-
-
-# @api_view(["GET"])
-# def finance_analytics(request):
-#     """
-#     Finance Department Analytics for Large Retail Businesses.
-#     Computes key metrics, period comparison, ratios, and triggers AI insight + forecast.
-#     """
-#     start_date_str = request.GET.get("start_date")
-#     end_date_str = request.GET.get("end_date")
-
-#     try:
-#         # === Load dataset ===
-#         df = load_dataset()
-#         if df.empty:
-#             return Response({"message": "Dataset is empty."}, status=404)
-
-#         # === Parse Dates ===
-#         start_date = pd.to_datetime(start_date_str) if start_date_str else df["main_date"].min()
-#         end_date = pd.to_datetime(end_date_str) if end_date_str else df["main_date"].max()
-
-#         # === Filter current and previous periods ===
-#         df_current = df[(df["main_date"] >= start_date) & (df["main_date"] <= end_date)]
-#         period_days = (end_date - start_date).days or 1
-#         prev_start = start_date - timedelta(days=period_days)
-#         prev_end = start_date - timedelta(days=1)
-#         df_previous = df[(df["main_date"] >= prev_start) & (df["main_date"] <= prev_end)]
-
-#         # === Ensure numeric conversions ===
-#         num_cols = [
-#             "net_extended_line_cost", "gross_sales_before_discount",
-#             "operational_cost_total", "logistics_cost_per_unit"
-#         ]
-#         for col in num_cols:
-#             if col in df.columns:
-#                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-#         # === Core Financial Metrics ===
-#         def compute_financial_summary(sub_df):
-#             revenue = sub_df["gross_sales_before_discount"].sum()
-#             cogs = sub_df["net_extended_line_cost"].sum()
-#             gross_profit = revenue - cogs
-#             operating_expenses = sub_df.get("operational_cost_total", pd.Series(0)).sum()
-#             logistics_cost = sub_df.get("logistics_cost_per_unit", pd.Series(0)).sum()
-#             operating_income = gross_profit - (operating_expenses + logistics_cost)
-#             ebitda_proxy = operating_income + (operating_expenses * 0.2)  # simplified proxy
-
-#             return {
-#                 "revenue": revenue,
-#                 "cogs": cogs,
-#                 "gross_profit": gross_profit,
-#                 "operating_expenses": operating_expenses,
-#                 "logistics_cost": logistics_cost,
-#                 "operating_income": operating_income,
-#                 "ebitda_proxy": ebitda_proxy,
-#                 "gross_margin": (gross_profit / revenue * 100) if revenue else 0,
-#                 "operating_margin": (operating_income / revenue * 100) if revenue else 0,
-#                 "ebitda_margin": (ebitda_proxy / revenue * 100) if revenue else 0,
-#             }
-
-#         summary_current = compute_financial_summary(df_current)
-#         summary_previous = compute_financial_summary(df_previous)
-
-#         # === Add Period Variance ===
-#         variance = {}
-#         for key in summary_current:
-#             prev_val = summary_previous.get(key, 0)
-#             cur_val = summary_current.get(key, 0)
-#             if isinstance(cur_val, (int, float)) and prev_val != 0:
-#                 variance[key + "_variance_%"] = ((cur_val - prev_val) / prev_val) * 100
-#             else:
-#                 variance[key + "_variance_%"] = None
-
-#         # === Determine Trend Frequency (auto granular)
-#         total_days = (end_date - start_date).days
-#         if total_days <= 31:
-#             freq = "D"  # daily
-#         elif total_days <= 180:
-#             freq = "W"  # weekly
-#         else:
-#             freq = "M"  # monthly (use 'ME' for compatibility)
-#         freq = "ME" if freq == "M" else freq
-
-#         # === Build Trend Data ===
-#         df_trend = df_current.set_index("main_date").resample(freq)["gross_sales_before_discount"].sum().reset_index()
-#         df_trend.columns = ["date", "revenue"]
-#         df_trend["gross_profit"] = (
-#             df_current.set_index("main_date").resample(freq)["net_extended_line_cost"].sum().reset_index(drop=True)
-#             .rsub(df_trend["revenue"])
-#         )
-
-#         # === Assemble Payload ===
-#         summary_payload = {
-#             "period": {"start": str(start_date.date()), "end": str(end_date.date())},
-#             "summary_current": summary_current,
-#             "summary_previous": summary_previous,
-#             "variance": variance,
-#             "trend": df_trend.to_dict(orient="records"),
-#         }
-
-#         # === Trigger Insight + Forecast in Background ===
-#         cache_key = generate_ai_cache_key(summary_payload, start_date, end_date, "finance")
-#         cache.set(
-#             cache_key + ":status",
-#             {"insight": "processing", "forecast": "processing"},
-#             timeout=3600,
-#         )
-#         threading.Thread(
-#             target=generate_insight_and_forecast_background,
-#             args=(summary_payload, str(start_date.date()), str(end_date.date()), "finance", cache_key, "finance_analytics"),
-#         ).start()
-
-#         return Response(
-#             {
-#                 "message": "Finance analytics computed successfully.",
-#                 "cache_key": cache_key,
-#                 **summary_payload,
-#             },
-#             status=200,
-#         )
-
-#     except Exception as e:
-#         return Response({"error": f"Failed to compute finance analytics: {str(e)}"}, status=500)
-
-
 @api_view(["GET"])
 def finance_analytics(request):
     """
@@ -4066,3 +3692,178 @@ def finance_analytics(request):
     })
 
 
+@api_view(["GET"])
+def customer_experience_analytics(request):
+    """
+    Customer Experience (CX) Analytics:
+    Focuses purely on customer satisfaction and experience — 
+    including CSAT, feedback sentiment, lead time, on-time delivery, 
+    campaign effectiveness, and satisfaction trends.
+    """
+    try:
+        df = load_dataset()
+    except Exception as e:
+        return Response({"error": f"Failed to load dataset: {str(e)}"}, status=500)
+
+    start_date_q = request.GET.get("start_date")
+    end_date_q = request.GET.get("end_date")
+    region_q = request.GET.get("region")
+    channel_q = request.GET.get("channel")
+
+    if "main_date" not in df.columns:
+        return Response({"error": "Dataset missing 'main_date' column."}, status=500)
+
+    # Normalize key numeric and text columns
+    num_cols = ["customer_satisfaction_csat", "lead_time_days"]
+    for col in num_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    df["main_date"] = pd.to_datetime(df["main_date"], errors="coerce")
+    df["order_date"] = pd.to_datetime(df.get("order_date", df["main_date"]), errors="coerce")
+    df["delivery_date"] = pd.to_datetime(df.get("delivery_date", pd.NaT), errors="coerce")
+
+    # === Date filtering ===
+    try:
+        start_dt = pd.to_datetime(start_date_q) if start_date_q else df["main_date"].min()
+        end_dt = pd.to_datetime(end_date_q) if end_date_q else df["main_date"].max()
+    except Exception as e:
+        return Response({"error": f"Invalid date inputs: {str(e)}"}, status=400)
+
+    df = df[(df["main_date"] >= start_dt) & (df["main_date"] <= end_dt)]
+    if region_q and "region" in df.columns:
+        df = df[df["region"].str.contains(region_q, case=False, na=False)]
+    if channel_q and "channel" in df.columns:
+        df = df[df["channel"].str.contains(channel_q, case=False, na=False)]
+
+    if df.empty:
+        return Response({"message": "No data found for selected filters."}, status=200)
+
+    # === Core CX metrics ===
+    avg_csat = round(df["customer_satisfaction_csat"].mean(), 2)
+    feedback_count = len(df["feedback_comment"].dropna())
+
+    positive_feedback = df["feedback_comment"].str.contains(
+        "good|great|excellent|fast|satisfied|happy", case=False, na=False
+    ).sum()
+    negative_feedback = df["feedback_comment"].str.contains(
+        "bad|slow|poor|late|disappointed|unhappy", case=False, na=False
+    ).sum()
+
+    positive_pct = round((positive_feedback / feedback_count) * 100, 1) if feedback_count else 0
+    negative_pct = round((negative_feedback / feedback_count) * 100, 1) if feedback_count else 0
+
+    # === Service delivery ===
+    avg_lead_time = round(df["lead_time_days"].mean(), 1)
+    on_time_delivery_rate = round(
+        (df["delivery_status"].str.contains("Delivered", case=False, na=False).sum() / len(df)) * 100, 1
+    )
+    avg_days_to_delivery = (df["delivery_date"] - df["order_date"]).dt.days.mean()
+    avg_days_to_delivery = round(avg_days_to_delivery or 0, 1)
+
+    # === Marketing effectiveness ===
+    top_campaigns = (
+        df.groupby("campaign_channel")["customer_satisfaction_csat"].mean()
+        .round(2)
+        .sort_values(ascending=False)
+        .head(5)
+        .to_dict()
+        if "campaign_channel" in df.columns
+        else {}
+    )
+
+    # === Breakdown by key customer dimensions ===
+    csat_by_region = (
+        df.groupby("region")["customer_satisfaction_csat"].mean().round(2).to_dict()
+        if "region" in df.columns
+        else {}
+    )
+    csat_by_channel = (
+        df.groupby("channel")["customer_satisfaction_csat"].mean().round(2).to_dict()
+        if "channel" in df.columns
+        else {}
+    )
+    csat_by_segment = (
+        df.groupby("customer_segment")["customer_satisfaction_csat"].mean().round(2).to_dict()
+        if "customer_segment" in df.columns
+        else {}
+    )
+    csat_by_category = (
+        df.groupby("product_category")["customer_satisfaction_csat"].mean().round(2).to_dict()
+        if "product_category" in df.columns
+        else {}
+    )
+
+    # === Previous period comparison ===
+    period_length = (end_dt - start_dt).days or 1
+    prev_start = start_dt - timedelta(days=period_length)
+    prev_end = start_dt - timedelta(days=1)
+    df_prev = df[(df["main_date"] >= prev_start) & (df["main_date"] <= prev_end)]
+
+    avg_csat_prev = df_prev["customer_satisfaction_csat"].mean() if not df_prev.empty else 0
+    avg_lead_time_prev = df_prev["lead_time_days"].mean() if not df_prev.empty else 0
+    on_time_prev = (
+        df_prev["delivery_status"].str.contains("Delivered", case=False, na=False).sum() / len(df_prev) * 100
+        if len(df_prev) > 0
+        else 0
+    )
+
+    def pct_variance(curr, prev):
+        if not prev:
+            return None
+        return round(((curr - prev) / prev) * 100, 2)
+
+    variance = {
+        "csat_variance_%": pct_variance(avg_csat, avg_csat_prev),
+        "lead_time_variance_%": pct_variance(avg_lead_time, avg_lead_time_prev),
+        "on_time_delivery_variance_%": pct_variance(on_time_delivery_rate, on_time_prev),
+    }
+
+    # === Trend data ===
+    trend_period = "D" if (end_dt - start_dt).days <= 45 else "W"
+    timeline = (
+        df.set_index("main_date")
+        .resample(trend_period)["customer_satisfaction_csat"]
+        .mean()
+        .reset_index()
+    )
+    timeline["period"] = timeline["main_date"].dt.strftime("%Y-%m-%d" if trend_period == "D" else "W%U")
+    trends = timeline.to_dict(orient="records")
+
+    # === Final Payload ===
+    cx_payload = {
+        "summary_current": {
+            "avg_csat": avg_csat,
+            "positive_feedback_%": positive_pct,
+            "negative_feedback_%": negative_pct,
+            "avg_lead_time_days": avg_lead_time,
+            "on_time_delivery_rate_%": on_time_delivery_rate,
+            "avg_days_to_delivery": avg_days_to_delivery,
+        },
+        "summary_previous": {
+            "avg_csat": round(avg_csat_prev, 2),
+            "avg_lead_time_days": round(avg_lead_time_prev, 1),
+            "on_time_delivery_rate_%": round(on_time_prev, 1),
+        },
+        "variance": variance,
+        "breakdowns": {
+            "csat_by_region": csat_by_region,
+            "csat_by_channel": csat_by_channel,
+            "csat_by_segment": csat_by_segment,
+            "csat_by_category": csat_by_category,
+        },
+        "marketing_effectiveness": {"top_campaign_channels": top_campaigns},
+        "trends": trends,
+    }
+
+    # === AI insight + forecast ===
+    cache_key = generate_ai_cache_key(cx_payload, start_dt, end_dt, "customer_experience")
+    cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+
+    threading.Thread(
+        target=generate_insight_and_forecast_background,
+        args=(cx_payload, str(start_dt.date()), str(end_dt.date()), "customer_experience_analytics", cache_key, "cx_metrics"),
+        daemon=True,
+    ).start()
+
+    return Response({**cx_payload, "data_key": cache_key, "ai_status": "processing"})
