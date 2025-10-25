@@ -2693,37 +2693,6 @@ def promotion_analysis(request):
     except Exception as e:
         return Response({"error": f"Failed to compute promotion analytics: {str(e)}"}, status=500)
 
-
-'''DEPRECATED'''
-@api_view(['GET'])
-def list_all_products(request):
-    try:
-        combined_df, sales_df, invoice_df = load_data()
-        df= combined_df
-
-        # Clean and normalize product fields
-        df['Product Description'] = df['Product Description'].fillna('').str.strip()
-        # df['Product Code'] = df['Product Code'].fillna('').astype(str).str.strip()
-        # df['Barcode'] = df['Barcode'].fillna('').astype(str).str.strip()
-
-        # Get unique products
-        # products = df[['Product Code', 'Product Description', 'Barcode']].drop_duplicates()
-        products = df[['Product Description']].drop_duplicates()
-        products = products.sort_values(by='Product Description')
-
-        # Convert to list of dicts
-        product_list = products.to_dict(orient='records')
-
-        return Response(product_list, status=status.HTTP_200_OK)
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-
-'''FINANCIAL ANALYTICS'''
-
 @api_view(["GET"])
 def profit_margin_analytics(request):
     period = request.GET.get("period", "monthly")
@@ -2859,179 +2828,6 @@ def profit_margin_analytics(request):
         "ai_status": "processing",
         "data_key": cache_key
     })
-
-
-# @api_view(['GET'])
-# def cost_analysis(request):
-#     try:
-#         combined_df, sales_df, invoice_df = load_data()
-#         df= combined_df
-#     except Exception as e:
-#         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
-
-#     df["Net Extended Line Cost"] = df["Net Extended Line Cost"].apply(parse_float)
-#     df["Created Date"] = pd.to_datetime(df["Created Date"], errors='coerce')
-
-#     # Query params
-#     period = request.query_params.get("period")
-#     store_filter = request.query_params.get("store")
-#     product_filter = request.query_params.get("product")
-#     start_date_param = request.query_params.get("start_date")
-#     end_date_param = request.query_params.get("end_date")
-
-#     today = pd.Timestamp.today().normalize()
-#     trend_freq = "W"
-
-#     try:
-#         if start_date_param and end_date_param:
-#             start_current = pd.to_datetime(start_date_param)
-#             end_current = pd.to_datetime(end_date_param)
-#             if start_current > end_current:
-#                 return Response({"error": "start_date cannot be after end_date."}, status=400)
-
-#             delta_days = (end_current - start_current).days
-#             trend_freq = "D" if delta_days <= 14 else "W" if delta_days <= 60 else "M"
-#             start_previous = end_previous = None
-
-#         elif period == "week":
-#             start_current = today - pd.to_timedelta(today.weekday(), unit='d')
-#             end_current = start_current + pd.Timedelta(days=6)
-#             start_previous = start_current - pd.Timedelta(days=7)
-#             end_previous = start_previous + pd.Timedelta(days=6)
-#             trend_freq = "D"
-
-#         elif period == "month":
-#             start_current = today.replace(day=1)
-#             end_current = start_current + pd.offsets.MonthEnd(1)
-#             start_previous = (start_current - pd.offsets.MonthBegin(1)).replace(day=1)
-#             end_previous = start_previous + pd.offsets.MonthEnd(1)
-#             trend_freq = "W"
-
-#         elif period == "year":
-#             start_current = today.replace(month=1, day=1)
-#             end_current = today + pd.offsets.YearEnd(0)
-#             start_previous = (start_current - pd.offsets.YearBegin(1)).replace(month=1, day=1)
-#             end_previous = start_previous + pd.offsets.YearEnd(1)
-#             trend_freq = "M"
-
-#         else:
-#             return Response({"error": "Provide valid 'period' or 'start_date' and 'end_date'."}, status=400)
-
-#     except Exception as e:
-#         return Response({"error": f"Invalid date input: {str(e)}"}, status=400)
-
-#     min_date = df["Created Date"].min()
-#     max_date = df["Created Date"].max()
-#     if start_current > max_date or end_current < min_date:
-#         return Response({
-#             "error": "Provided date range is outside the available data range.",
-#             "data_available_from": str(min_date.date()),
-#             "data_available_to": str(max_date.date())
-#         }, status=404)
-
-#     df_current = df[(df["Created Date"] >= start_current) & (df["Created Date"] <= end_current)].copy()
-#     df_previous = (
-#         df[(df["Created Date"] >= start_previous) & (df["Created Date"] <= end_previous)].copy()
-#         if start_previous and end_previous else pd.DataFrame(columns=df.columns)
-#     )
-
-#     if df_current.empty:
-#         return Response({"error": "No data available for the current period."}, status=404)
-
-#     if store_filter:
-#         df_current = df_current[df_current["Store Name"].str.lower() == store_filter.lower()]
-#     if product_filter:
-#         df_current = df_current[df_current["Product Description"].str.lower() == product_filter.lower()]
-
-#     total_cost_current = df_current["Net Extended Line Cost"].sum()
-#     total_cost_previous = df_previous["Net Extended Line Cost"].sum()
-#     growth_percent = (
-#         ((total_cost_current - total_cost_previous) / total_cost_previous) * 100
-#         if total_cost_previous else 0
-#     )
-
-#     trend_current = df_current.set_index("Created Date")["Net Extended Line Cost"].resample(trend_freq).sum().reset_index()
-#     trend_current["Net Extended Line Cost"] = trend_current["Net Extended Line Cost"].round(2)
-
-#     trend_previous = (
-#         df_previous.set_index("Created Date")["Net Extended Line Cost"].resample(trend_freq).sum().reset_index()
-#         if not df_previous.empty else []
-#     )
-#     if not isinstance(trend_previous, list):
-#         trend_previous["Net Extended Line Cost"] = trend_previous["Net Extended Line Cost"].round(2)
-
-#     product_costs = (
-#         df_current.groupby("Product Description")["Net Extended Line Cost"]
-#         .sum().reset_index().rename(columns={"Net Extended Line Cost": "Total Cost"})
-#         .sort_values("Total Cost", ascending=False)
-#     )
-#     product_costs["Total Cost"] = product_costs["Total Cost"].round(2)
-
-#     store_costs = (
-#         df_current.groupby("Store Name")["Net Extended Line Cost"]
-#         .sum().reset_index().rename(columns={"Net Extended Line Cost": "Total Cost"})
-#         .sort_values("Total Cost", ascending=False)
-#     )
-#     store_costs["Total Cost"] = store_costs["Total Cost"].round(2)
-
-#     product_count_per_store = (
-#         df_current.groupby("Store Name")["Product Description"]
-#         .nunique().reset_index().rename(columns={"Product Description": "Unique Product Count"})
-#     )
-
-#     most_expensive_product = product_costs.iloc[0].to_dict() if not product_costs.empty else {}
-#     most_expensive_store = store_costs.iloc[0].to_dict() if not store_costs.empty else {}
-
-#     # -------------------------
-#     # AI Insight/Forecast Setup
-#     # -------------------------
-#     summary_payload = {
-#         "total_cost_current": round(total_cost_current, 2),
-#         "total_cost_previous": round(total_cost_previous, 2) if not df_previous.empty else None,
-#         "cost_growth_percent": round(growth_percent, 2) if not df_previous.empty else None,
-#         "most_expensive_product": most_expensive_product,
-#         "most_expensive_store": most_expensive_store,
-#         "product_cost_breakdown": product_costs.to_dict(orient="records"),
-#         "store_cost_breakdown": store_costs.to_dict(orient="records"),
-#     }
-
-#     cache_key = generate_ai_cache_key(summary_payload, start_current, end_current, period or "custom")
-#     # Set cache status and run AI generation in background
-#     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-#     cache.set(cache_key + ":insight", "Processing...", timeout=3600)
-#     cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
-#     threading.Thread(
-#         target=generate_insight_and_forecast_background,
-#         args=(summary_payload, str(start_current.date()), str(end_current.date()), period or "custom", cache_key, "cost_analysis")
-#     ).start()
-
-#     return Response({
-#         "mode": "custom" if start_date_param else period,
-#         "start_current": start_current.date(),
-#         "end_current": end_current.date(),
-#         "start_previous": start_previous.date() if start_previous else None,
-#         "end_previous": end_previous.date() if end_previous else None,
-#         "total_cost_current": round(total_cost_current, 2),
-#         "total_cost_previous": round(total_cost_previous, 2) if not df_previous.empty else None,
-#         "cost_growth_percent": round(growth_percent, 2) if not df_previous.empty else None,
-#         "current_period_cost_trend": trend_current.to_dict(orient="records"),
-#         "previous_period_cost_trend": trend_previous if isinstance(trend_previous, list) else trend_previous.to_dict(orient="records"),
-#         "product_cost_breakdown": product_costs.to_dict(orient="records"),
-#         "store_cost_breakdown": store_costs.to_dict(orient="records"),
-#         "products_involved": sorted(df_current["Product Description"].dropna().unique().tolist()),
-#         "stores_involved": sorted(df_current["Store Name"].dropna().unique().tolist()),
-#         "unique_products_per_store": product_count_per_store.to_dict(orient="records"),
-#         "most_expensive_product": most_expensive_product,
-#         "most_expensive_store": most_expensive_store,
-#         "filters_applied": {
-#             "store": store_filter,
-#             "product": product_filter,
-#             "start_date": start_date_param,
-#             "end_date": end_date_param
-#         },
-#         "data_key": cache_key
-#     })
-
 
 @api_view(['GET'])
 def cost_analysis(request):
@@ -3211,6 +3007,34 @@ def cost_analysis(request):
         },
         "data_key": cache_key
     })
+
+
+
+'''DEPRECATED'''
+@api_view(['GET'])
+def list_all_products(request):
+    try:
+        combined_df, sales_df, invoice_df = load_data()
+        df= combined_df
+
+        # Clean and normalize product fields
+        df['Product Description'] = df['Product Description'].fillna('').str.strip()
+        # df['Product Code'] = df['Product Code'].fillna('').astype(str).str.strip()
+        # df['Barcode'] = df['Barcode'].fillna('').astype(str).str.strip()
+
+        # Get unique products
+        # products = df[['Product Code', 'Product Description', 'Barcode']].drop_duplicates()
+        products = df[['Product Description']].drop_duplicates()
+        products = products.sort_values(by='Product Description')
+
+        # Convert to list of dicts
+        product_list = products.to_dict(orient='records')
+
+        return Response(product_list, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 
