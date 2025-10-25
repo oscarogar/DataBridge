@@ -2860,12 +2860,16 @@ def cost_analysis(request):
         if start_date_param and end_date_param:
             start_current = pd.to_datetime(start_date_param)
             end_current = pd.to_datetime(end_date_param)
+
             if start_current > end_current:
                 return Response({"error": "start_date cannot be after end_date."}, status=400)
 
             delta_days = (end_current - start_current).days
             trend_freq = "D" if delta_days <= 14 else "W" if delta_days <= 60 else "M"
-            start_previous = end_previous = None
+
+            # ✅ Auto-generate previous period of equal length
+            end_previous = start_current - pd.Timedelta(days=1)
+            start_previous = end_previous - pd.Timedelta(days=delta_days)
 
         elif period == "week":
             start_current = today - pd.to_timedelta(today.weekday(), unit='d')
@@ -2892,6 +2896,7 @@ def cost_analysis(request):
             return Response({"error": "Provide valid 'period' or 'start_date' and 'end_date'."}, status=400)
     except Exception as e:
         return Response({"error": f"Invalid date input: {str(e)}"}, status=400)
+
 
     # ===== Validate date range =====
     min_date = df["main_date"].min()
