@@ -33,7 +33,8 @@ urlpatterns = [
     
     # path("invoice/trend/conversion/", views.invoice_trend_and_conversion),
     # path('product/performance/', views.product_performance_analysis),
-    # path('operations/metrics/', views.operations_metrics),
+    path('operations/metrics/', views.operations_metrics),
+    path('financial/performance/', views.finance_analytics),
     
     
     
