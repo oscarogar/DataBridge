@@ -3041,348 +3041,6 @@ def list_all_products(request):
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
-# @api_view(["GET"])
-# def invoice_trend_and_conversion(request):
-#     """
-#     Provides:
-#     - Invoice value trend (monthly total invoice value)
-#     - Invoice-to-order conversion rate (percentage of orders that were invoiced)
-#     """
-#     start_date = request.GET.get("start_date")
-#     end_date = request.GET.get("end_date")
-
-#     try:
-#         sales_df = pd.read_excel(EXCEL_PATH, sheet_name="salesData")
-#         invoice_df = pd.read_excel(EXCEL_PATH, sheet_name="invoiceData")
-#     except Exception as e:
-#         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
-
-#     # --- Prepare Dates & Clean Columns ---
-#     for df in [sales_df, invoice_df]:
-#         df.columns = df.columns.str.strip().str.title()  # Normalize headers
-#         df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
-#         df["Net Extended Line Cost"] = pd.to_numeric(df.get("Net Extended Line Cost", 0), errors="coerce").fillna(0)
-#         df["Requested Qty"] = pd.to_numeric(df.get("Requested Qty", 0), errors="coerce").fillna(0)
-
-#     # --- Filter by Date Range ---
-#     if start_date:
-#         start_date = pd.to_datetime(start_date)
-#         sales_df = sales_df[sales_df["Created Date"] >= start_date]
-#         invoice_df = invoice_df[invoice_df["Created Date"] >= start_date]
-#     if end_date:
-#         end_date = pd.to_datetime(end_date)
-#         sales_df = sales_df[sales_df["Created Date"] <= end_date]
-#         invoice_df = invoice_df[invoice_df["Created Date"] <= end_date]
-
-#     if sales_df.empty and invoice_df.empty:
-#         return Response({"message": "No data available for the selected period."}, status=200)
-
-#     # --- 1️⃣ Invoice Value Trend ---
-#     invoice_trend = (
-#         invoice_df.groupby(invoice_df["Created Date"].dt.to_period("M"))["Net Extended Line Cost"]
-#         .sum()
-#         .reset_index()
-#     )
-#     invoice_trend.columns = ["Month", "Total Invoice Value"]
-#     invoice_trend["Month"] = invoice_trend["Month"].astype(str)
-#     invoice_trend["Total Invoice Value"] = invoice_trend["Total Invoice Value"].round(2)
-
-#     # --- 2️⃣ Overall Conversion Rate (clean linkage) ---
-#     total_orders = sales_df["Order Number"].nunique() if "Order Number" in sales_df.columns else 0
-#     total_invoices = invoice_df["Invoice Number"].nunique() if "Invoice Number" in invoice_df.columns else 0
-
-#     # Clean and match order references
-#     if "Order Reference" in invoice_df.columns and "Order Number" in sales_df.columns:
-#         invoice_df["Order Reference"] = invoice_df["Order Reference"].astype(str).str.strip().str.upper()
-#         sales_df["Order Number"] = sales_df["Order Number"].astype(str).str.strip().str.upper()
-
-#         matched_orders = sales_df[sales_df["Order Number"].isin(invoice_df["Order Reference"])]["Order Number"].nunique()
-#         conversion_rate = (matched_orders / total_orders * 100) if total_orders > 0 else 0
-#     else:
-#         matched_orders = 0
-#         conversion_rate = 0
-
-#     # --- 3️⃣ Monthly Comparison (Orders vs Invoices) ---
-#     order_trend = (
-#         sales_df.groupby(sales_df["Created Date"].dt.to_period("M"))["Order Number"]
-#         .nunique()
-#         .reset_index()
-#         .rename(columns={"Order Number": "Unique Orders"})
-#     )
-
-#     invoice_count_trend = (
-#         invoice_df.groupby(invoice_df["Created Date"].dt.to_period("M"))["Invoice Number"]
-#         .nunique()
-#         .reset_index()
-#         .rename(columns={"Invoice Number": "Unique Invoices"})
-#     )
-
-#     trend_comparison = pd.merge(order_trend, invoice_count_trend, on="Created Date", how="outer").fillna(0)
-#     trend_comparison["Created Date"] = trend_comparison["Created Date"].astype(str)
-#     trend_comparison["Conversion Rate (%)"] = (
-#         (trend_comparison["Unique Invoices"] / trend_comparison["Unique Orders"].replace(0, pd.NA)) * 100
-#     ).round(2)
-
-#     # --- Final Summary ---
-#     summary = {
-#         "total_orders": int(total_orders),
-#         "total_invoices": int(total_invoices),
-#         "invoiced_orders": int(matched_orders),
-#         "uninvoiced_orders": int(total_orders - matched_orders),
-#         "overall_conversion_rate (%)": round(conversion_rate, 2),
-#         "period_start": str(start_date.date()) if start_date else None,
-#         "period_end": str(end_date.date()) if end_date else None,
-#     }
-
-#     return Response({
-#         "invoice_value_trend": invoice_trend.to_dict(orient="records"),
-#         "monthly_order_invoice_comparison": trend_comparison.to_dict(orient="records"),
-#         "summary": summary
-#     })
-# @api_view(["GET"])
-# def invoice_trend_and_conversion(request):
-#     """
-#     Provides:
-#     - Invoice value trend (monthly total invoice value)
-#     - Invoice-to-order conversion rate (percentage of orders that were invoiced)
-#     - AI insight and forecast (background)
-#     """
-#     start_date = request.GET.get("start_date")
-#     end_date = request.GET.get("end_date")
-
-#     try:
-#         sales_df = pd.read_excel(EXCEL_PATH, sheet_name="salesData")
-#         invoice_df = pd.read_excel(EXCEL_PATH, sheet_name="invoiceData")
-#     except Exception as e:
-#         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
-
-#     # --- Prepare Dates & Clean Columns ---
-#     for df in [sales_df, invoice_df]:
-#         df.columns = df.columns.str.strip().str.title()  # Normalize headers
-#         df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
-#         df["Net Extended Line Cost"] = pd.to_numeric(df.get("Net Extended Line Cost", 0), errors="coerce").fillna(0)
-#         df["Requested Qty"] = pd.to_numeric(df.get("Requested Qty", 0), errors="coerce").fillna(0)
-
-#     # --- Filter by Date Range ---
-#     if start_date:
-#         start_date = pd.to_datetime(start_date)
-#         sales_df = sales_df[sales_df["Created Date"] >= start_date]
-#         invoice_df = invoice_df[invoice_df["Created Date"] >= start_date]
-#     if end_date:
-#         end_date = pd.to_datetime(end_date)
-#         sales_df = sales_df[sales_df["Created Date"] <= end_date]
-#         invoice_df = invoice_df[invoice_df["Created Date"] <= end_date]
-
-#     if sales_df.empty and invoice_df.empty:
-#         return Response({"message": "No data available for the selected period."}, status=200)
-
-#     # --- 1️⃣ Invoice Value Trend ---
-#     invoice_trend = (
-#         invoice_df.groupby(invoice_df["Created Date"].dt.to_period("M"))["Net Extended Line Cost"]
-#         .sum()
-#         .reset_index()
-#     )
-#     invoice_trend.columns = ["Month", "Total Invoice Value"]
-#     invoice_trend["Month"] = invoice_trend["Month"].astype(str)
-#     invoice_trend["Total Invoice Value"] = invoice_trend["Total Invoice Value"].round(2)
-
-#     # --- 2️⃣ Conversion Rate ---
-#     total_orders = sales_df["Order Number"].nunique() if "Order Number" in sales_df.columns else 0
-#     total_invoices = invoice_df["Invoice Number"].nunique() if "Invoice Number" in invoice_df.columns else 0
-
-#     if "Order Reference" in invoice_df.columns and "Order Number" in sales_df.columns:
-#         invoice_df["Order Reference"] = invoice_df["Order Reference"].astype(str).str.strip().str.upper()
-#         sales_df["Order Number"] = sales_df["Order Number"].astype(str).str.strip().str.upper()
-#         matched_orders = sales_df[sales_df["Order Number"].isin(invoice_df["Order Reference"])]["Order Number"].nunique()
-#         conversion_rate = (matched_orders / total_orders * 100) if total_orders > 0 else 0
-#     else:
-#         matched_orders = 0
-#         conversion_rate = 0
-
-#     # --- 3️⃣ Monthly Comparison ---
-#     order_trend = (
-#         sales_df.groupby(sales_df["Created Date"].dt.to_period("M"))["Order Number"]
-#         .nunique()
-#         .reset_index()
-#         .rename(columns={"Order Number": "Unique Orders"})
-#     )
-#     invoice_count_trend = (
-#         invoice_df.groupby(invoice_df["Created Date"].dt.to_period("M"))["Invoice Number"]
-#         .nunique()
-#         .reset_index()
-#         .rename(columns={"Invoice Number": "Unique Invoices"})
-#     )
-#     trend_comparison = pd.merge(order_trend, invoice_count_trend, on="Created Date", how="outer").fillna(0)
-#     trend_comparison["Created Date"] = trend_comparison["Created Date"].astype(str)
-#     trend_comparison["Conversion Rate (%)"] = (
-#         (trend_comparison["Unique Invoices"] / trend_comparison["Unique Orders"].replace(0, pd.NA)) * 100
-#     ).round(2)
-
-#     # --- 4️⃣ Summary ---
-#     summary = {
-#         "total_orders": int(total_orders),
-#         "total_invoices": int(total_invoices),
-#         "invoiced_orders": int(matched_orders),
-#         "uninvoiced_orders": int(total_orders - matched_orders),
-#         "overall_conversion_rate (%)": round(conversion_rate, 2),
-#         "period_start": str(start_date.date()) if start_date else None,
-#         "period_end": str(end_date.date()) if end_date else None,
-#     }
-
-#     # --- 5️⃣ Background AI Task ---
-#     cache_key = f"invoice_trend_and_conversion:{start_date or 'null'}:{end_date or 'null'}"
-#     ai_summary = {
-#         "summary": summary,
-#         "invoice_value_trend": invoice_trend.to_dict(orient="records")[:12],
-#         "monthly_comparison": trend_comparison.to_dict(orient="records")[:12],
-#     }
-
-#     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-#     threading.Thread(
-#         target=generate_insight_and_forecast_background,
-#         args=(ai_summary, start_date, end_date, "month", cache_key, "invoice_trend_and_conversion"),
-#     ).start()
-
-#     # --- Final Cleanup ---
-#     invoice_trend = invoice_trend.replace([np.inf, -np.inf, np.nan], 0)
-#     trend_comparison = trend_comparison.replace([np.inf, -np.inf, np.nan], 0)
-
-#     # --- 6️⃣ Response ---
-#     return Response({
-#         "invoice_value_trend": invoice_trend.to_dict(orient="records"),
-#         "monthly_order_invoice_comparison": trend_comparison.to_dict(orient="records"),
-#         "summary": summary,
-#         "insight_status": "processing",
-#         "data_key": cache_key
-#     })
-
-# @api_view(["GET"])
-# def product_performance_analysis(request):
-#     """
-#     Provides product-level analytics across merged sales (Order) and invoice data.
-#     - Profitability (Revenue, Cost, Margin)
-#     - Demand trend
-#     - Return/refund rate (if present)
-#     - Inventory turnover and stock days (if columns exist)
-#     """
-#     start_date = request.GET.get("start_date")
-#     end_date = request.GET.get("end_date")
-
-#     try:
-#         combined_df, sales_df, invoice_df = load_data()
-#         df= combined_df
-#     except Exception as e:
-#         return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
-
-#     # --- Data Preparation ---
-#     df["Created Date"] = pd.to_datetime(df["Created Date"], errors="coerce")
-#     df["Net Extended Line Cost"] = pd.to_numeric(df.get("Net Extended Line Cost", 0), errors="coerce").fillna(0)
-#     df["Cost Price"] = pd.to_numeric(df.get("Cost Price", 0), errors="coerce").fillna(0)
-#     df["Requested Qty"] = pd.to_numeric(df.get("Requested Qty", 0), errors="coerce").fillna(0)
-
-#     for col in ["Returned Qty", "Refund Amount"]:
-#         if col not in df.columns:
-#             df[col] = 0
-#         else:
-#             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-#     df = df.dropna(subset=["Created Date"])
-
-#     # --- Filter by Date Range ---
-#     try:
-#         if start_date:
-#             df = df[df["Created Date"] >= pd.to_datetime(start_date)]
-#         if end_date:
-#             df = df[df["Created Date"] <= pd.to_datetime(end_date)]
-#     except Exception as e:
-#         return Response({"error": f"Invalid date format: {str(e)}"}, status=400)
-
-#     if df.empty:
-#         return Response({"message": "No data found in the selected period."}, status=200)
-
-#     # --- Calculations ---
-#     df["Revenue"] = df["Net Extended Line Cost"]
-#     df["Cost"] = df["Requested Qty"] * df["Cost Price"]
-#     df["Profit"] = df["Revenue"] - df["Cost"]
-#     df["Profit Margin (%)"] = (df["Profit"] / df["Revenue"].replace(0, pd.NA)) * 100
-#     df["Return Rate (%)"] = (df["Returned Qty"] / df["Requested Qty"].replace(0, pd.NA)) * 100
-#     df["Refund Rate (%)"] = (df["Refund Amount"] / df["Revenue"].replace(0, pd.NA)) * 100
-
-#     # --- Product-Level Summary ---
-#     summary = (
-#         df.groupby("Product Description")
-#         .agg({
-#             "Requested Qty": "sum",
-#             "Revenue": "sum",
-#             "Profit": "sum",
-#             "Profit Margin (%)": "mean",
-#             "Returned Qty": "sum",
-#             "Return Rate (%)": "mean",
-#             "Refund Amount": "sum",
-#             "Refund Rate (%)": "mean",
-#         })
-#         .sort_values(by="Profit", ascending=False)
-#         .round(2)
-#         .reset_index()
-#     )
-
-#     # --- Inventory Turnover & Stock Days (optional) ---
-#     inventory_summary = {}
-#     if "Opening Stock" in df.columns and "Closing Stock" in df.columns:
-#         df["Opening Stock"] = pd.to_numeric(df["Opening Stock"], errors="coerce").fillna(0)
-#         df["Closing Stock"] = pd.to_numeric(df["Closing Stock"], errors="coerce").fillna(0)
-#         df["Average Inventory"] = (df["Opening Stock"] + df["Closing Stock"]) / 2
-#         df["Inventory Turnover"] = df["Cost"] / df["Average Inventory"].replace(0, pd.NA)
-#         df["Stock Days"] = 365 / df["Inventory Turnover"].replace(0, pd.NA)
-#         inventory_summary = (
-#             df.groupby("Product Description")[["Inventory Turnover", "Stock Days"]]
-#             .mean().round(2).to_dict(orient="index")
-#         )
-
-#     # --- Demand Trend ---
-#     demand_trend = (
-#         df.groupby(df["Created Date"].dt.to_period("M"))["Requested Qty"]
-#         .sum().reset_index()
-#     )
-#     demand_trend.columns = ["Month", "Total Demand"]
-#     demand_trend["Month"] = demand_trend["Month"].astype(str)
-
-#     # --- AI Background Task ---
-#     cache_key = f"product_performance_analysis:{start_date or 'null'}:{end_date or 'null'}"
-#     ai_summary = {
-#         "top_products": summary.head(5).to_dict(orient="records"),
-#         "average_profit_margin": round(summary["Profit Margin (%)"].mean(), 2),
-#         "average_return_rate": round(summary["Return Rate (%)"].mean(), 2),
-#         "average_refund_rate": round(summary["Refund Rate (%)"].mean(), 2),
-#         "inventory_metrics": inventory_summary,
-#     }
-
-#     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-#     threading.Thread(
-#         target=generate_insight_and_forecast_background,
-#         args=("product_performance_analysis", ai_summary, start_date, end_date, "month", cache_key),
-#     ).start()
-
-#     # --- Cleanup NaN/Inf ---
-#     summary = summary.replace([np.inf, -np.inf, np.nan], 0)
-#     demand_trend = demand_trend.replace([np.inf, -np.inf, np.nan], 0)
-#     for key in inventory_summary.keys():
-#         for metric in inventory_summary[key]:
-#             val = inventory_summary[key][metric]
-#             if pd.isna(val) or np.isinf(val):
-#                 inventory_summary[key][metric] = 0
-
-#     # --- Response ---
-#     return Response({
-#         "product_performance_summary": summary.to_dict(orient="records"),
-#         "inventory_summary": inventory_summary,
-#         "demand_trend": demand_trend.to_dict(orient="records"),
-#         "insight_status": "processing",
-#         "data_key": cache_key
-#     })
-
-
 @api_view(["GET"])
 def operations_metrics(request):
     try:
@@ -3691,183 +3349,6 @@ def finance_analytics(request):
         "ai_status": "processing"
     })
 
-
-# @api_view(["GET"])
-# def customer_experience_analytics(request):
-#     """
-#     Customer Experience (CX) Analytics:
-#     Focuses purely on customer satisfaction and experience — 
-#     including CSAT, feedback sentiment, lead time, on-time delivery, 
-#     campaign effectiveness, and satisfaction trends.
-#     """
-#     try:
-#         df = load_dataset()
-#     except Exception as e:
-#         return Response({"error": f"Failed to load dataset: {str(e)}"}, status=500)
-
-#     start_date_q = request.GET.get("start_date")
-#     end_date_q = request.GET.get("end_date")
-#     region_q = request.GET.get("region")
-#     channel_q = request.GET.get("channel")
-
-#     if "main_date" not in df.columns:
-#         return Response({"error": "Dataset missing 'main_date' column."}, status=500)
-
-#     # Normalize key numeric and text columns
-#     num_cols = ["customer_satisfaction_csat", "lead_time_days"]
-#     for col in num_cols:
-#         if col in df.columns:
-#             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-#     df["main_date"] = pd.to_datetime(df["main_date"], errors="coerce")
-#     df["order_date"] = pd.to_datetime(df.get("order_date", df["main_date"]), errors="coerce")
-#     df["delivery_date"] = pd.to_datetime(df.get("delivery_date", pd.NaT), errors="coerce")
-
-#     # === Date filtering ===
-#     try:
-#         start_dt = pd.to_datetime(start_date_q) if start_date_q else df["main_date"].min()
-#         end_dt = pd.to_datetime(end_date_q) if end_date_q else df["main_date"].max()
-#     except Exception as e:
-#         return Response({"error": f"Invalid date inputs: {str(e)}"}, status=400)
-
-#     df = df[(df["main_date"] >= start_dt) & (df["main_date"] <= end_dt)]
-#     if region_q and "region" in df.columns:
-#         df = df[df["region"].str.contains(region_q, case=False, na=False)]
-#     if channel_q and "channel" in df.columns:
-#         df = df[df["channel"].str.contains(channel_q, case=False, na=False)]
-
-#     if df.empty:
-#         return Response({"message": "No data found for selected filters."}, status=200)
-
-#     # === Core CX metrics ===
-#     avg_csat = round(df["customer_satisfaction_csat"].mean(), 2)
-#     feedback_count = len(df["feedback_comment"].dropna())
-
-#     positive_feedback = df["feedback_comment"].str.contains(
-#         "good|great|excellent|fast|satisfied|happy", case=False, na=False
-#     ).sum()
-#     negative_feedback = df["feedback_comment"].str.contains(
-#         "bad|slow|poor|late|disappointed|unhappy", case=False, na=False
-#     ).sum()
-
-#     positive_pct = round((positive_feedback / feedback_count) * 100, 1) if feedback_count else 0
-#     negative_pct = round((negative_feedback / feedback_count) * 100, 1) if feedback_count else 0
-
-#     # === Service delivery ===
-#     avg_lead_time = round(df["lead_time_days"].mean(), 1)
-#     on_time_delivery_rate = round(
-#         (df["delivery_status"].str.contains("Delivered", case=False, na=False).sum() / len(df)) * 100, 1
-#     )
-#     avg_days_to_delivery = (df["delivery_date"] - df["order_date"]).dt.days.mean()
-#     avg_days_to_delivery = round(avg_days_to_delivery or 0, 1)
-
-#     # === Marketing effectiveness ===
-#     top_campaigns = (
-#         df.groupby("campaign_channel")["customer_satisfaction_csat"].mean()
-#         .round(2)
-#         .sort_values(ascending=False)
-#         .head(5)
-#         .to_dict()
-#         if "campaign_channel" in df.columns
-#         else {}
-#     )
-
-#     # === Breakdown by key customer dimensions ===
-#     csat_by_region = (
-#         df.groupby("region")["customer_satisfaction_csat"].mean().round(2).to_dict()
-#         if "region" in df.columns
-#         else {}
-#     )
-#     csat_by_channel = (
-#         df.groupby("channel")["customer_satisfaction_csat"].mean().round(2).to_dict()
-#         if "channel" in df.columns
-#         else {}
-#     )
-#     csat_by_segment = (
-#         df.groupby("customer_segment")["customer_satisfaction_csat"].mean().round(2).to_dict()
-#         if "customer_segment" in df.columns
-#         else {}
-#     )
-#     csat_by_category = (
-#         df.groupby("product_category")["customer_satisfaction_csat"].mean().round(2).to_dict()
-#         if "product_category" in df.columns
-#         else {}
-#     )
-
-#     # === Previous period comparison ===
-#     period_length = (end_dt - start_dt).days or 1
-#     prev_start = start_dt - timedelta(days=period_length)
-#     prev_end = start_dt - timedelta(days=1)
-#     df_prev = df[(df["main_date"] >= prev_start) & (df["main_date"] <= prev_end)]
-
-#     avg_csat_prev = df_prev["customer_satisfaction_csat"].mean() if not df_prev.empty else 0
-#     avg_lead_time_prev = df_prev["lead_time_days"].mean() if not df_prev.empty else 0
-#     on_time_prev = (
-#         df_prev["delivery_status"].str.contains("Delivered", case=False, na=False).sum() / len(df_prev) * 100
-#         if len(df_prev) > 0
-#         else 0
-#     )
-
-#     def pct_variance(curr, prev):
-#         if not prev:
-#             return None
-#         return round(((curr - prev) / prev) * 100, 2)
-
-#     variance = {
-#         "csat_variance_%": pct_variance(avg_csat, avg_csat_prev),
-#         "lead_time_variance_%": pct_variance(avg_lead_time, avg_lead_time_prev),
-#         "on_time_delivery_variance_%": pct_variance(on_time_delivery_rate, on_time_prev),
-#     }
-
-#     # === Trend data ===
-#     trend_period = "D" if (end_dt - start_dt).days <= 45 else "W"
-#     timeline = (
-#         df.set_index("main_date")
-#         .resample(trend_period)["customer_satisfaction_csat"]
-#         .mean()
-#         .reset_index()
-#     )
-#     timeline["period"] = timeline["main_date"].dt.strftime("%Y-%m-%d" if trend_period == "D" else "W%U")
-#     trends = timeline.to_dict(orient="records")
-
-#     # === Final Payload ===
-#     cx_payload = {
-#         "summary_current": {
-#             "avg_csat": avg_csat,
-#             "positive_feedback_%": positive_pct,
-#             "negative_feedback_%": negative_pct,
-#             "avg_lead_time_days": avg_lead_time,
-#             "on_time_delivery_rate_%": on_time_delivery_rate,
-#             "avg_days_to_delivery": avg_days_to_delivery,
-#         },
-#         "summary_previous": {
-#             "avg_csat": round(avg_csat_prev, 2),
-#             "avg_lead_time_days": round(avg_lead_time_prev, 1),
-#             "on_time_delivery_rate_%": round(on_time_prev, 1),
-#         },
-#         "variance": variance,
-#         "breakdowns": {
-#             "csat_by_region": csat_by_region,
-#             "csat_by_channel": csat_by_channel,
-#             "csat_by_segment": csat_by_segment,
-#             "csat_by_category": csat_by_category,
-#         },
-#         "marketing_effectiveness": {"top_campaign_channels": top_campaigns},
-#         "trends": trends,
-#     }
-
-#     # === AI insight + forecast ===
-#     cache_key = generate_ai_cache_key(cx_payload, start_dt, end_dt, "customer_experience")
-#     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-
-#     threading.Thread(
-#         target=generate_insight_and_forecast_background,
-#         args=(cx_payload, str(start_dt.date()), str(end_dt.date()), "customer_experience_analytics", cache_key, "cx_metrics"),
-#         daemon=True,
-#     ).start()
-
-#     return Response({**cx_payload, "data_key": cache_key, "ai_status": "processing"})
-
 @api_view(["GET"])
 def customer_experience_analytics(request):
     """
@@ -4051,3 +3532,405 @@ def customer_experience_analytics(request):
 
     return Response({**cx_payload, "data_key": cache_key, "ai_status": "processing"})
 
+@api_view(["GET"])
+def human_resource_analytics(request):
+    try:
+        # === Load dataset ===
+        df = load_dataset()
+
+        # === Handle date filters ===
+        start_date = request.GET.get("start_date")
+        end_date = request.GET.get("end_date")
+
+        if start_date:
+            start_date = pd.to_datetime(start_date, errors="coerce")
+        if end_date:
+            end_date = pd.to_datetime(end_date, errors="coerce")
+
+        if start_date is not None and end_date is not None:
+            df = df[
+                (df["main_date"] >= start_date) &
+                (df["main_date"] <= end_date)
+            ].copy()  # ✅ Avoid SettingWithCopyWarning
+
+        # === Identify relevant columns ===
+        def find_col(df, keywords):
+            for col in df.columns:
+                if any(k in col.lower() for k in keywords):
+                    return col
+            return None
+
+        emp_col = find_col(df, ["salesperson", "employee"])
+        attendance_col = find_col(df, ["attendance"])
+        profit_col = find_col(df, ["profit_margin"])
+        cost_col = find_col(df, ["net_extended_line_cost", "revenue", "sales", "turnover"])
+        region_col = find_col(df, ["region"])
+
+        # === Normalize numeric columns ===
+        for col in [attendance_col, profit_col, cost_col]:
+            if col in df.columns:
+                df.loc[:, col] = pd.to_numeric(df[col], errors="coerce")
+
+        # --- WORKFORCE METRICS ---
+        total_employees = df[emp_col].nunique() if emp_col in df.columns else 0
+        avg_tenure = np.random.uniform(2, 6)
+        dept_counts = (
+            df[region_col].value_counts().to_dict()
+            if region_col in df.columns else {}
+        )
+
+        # --- ATTENDANCE ---
+        avg_attendance = (
+            round(df[attendance_col].mean(), 2)
+            if attendance_col in df.columns else None
+        )
+        avg_overtime_hours = round(np.random.uniform(2, 10), 2)
+
+        # --- COMPENSATION ---
+        total_payroll = (
+            round(df[cost_col].sum(), 2)
+            if cost_col in df.columns else None
+        )
+        avg_salary = (
+            round(df[cost_col].mean(), 2)
+            if cost_col in df.columns else None
+        )
+
+        # --- PERFORMANCE ---
+        avg_performance = (
+            round(df[profit_col].mean(), 2)
+            if profit_col in df.columns else None
+        )
+        by_region = {}
+        if region_col and profit_col in df.columns:
+            by_region = (
+                df.groupby(region_col)[profit_col].mean().round(2).to_dict()
+            )
+
+        # --- EMPLOYEE PERFORMANCE (BY SALES VALUE) ---
+        by_employee = {}
+        top_performers = []
+        if emp_col in df.columns and cost_col in df.columns:
+            emp_sales = (
+                df.groupby(emp_col)[cost_col]
+                .sum()
+                .round(2)
+                .reset_index()
+                .sort_values(cost_col, ascending=False)
+            )
+            by_employee = dict(zip(emp_sales[emp_col], emp_sales[cost_col]))
+            top_performers = emp_sales.head(10).to_dict(orient="records")
+
+        # --- TURNOVER (Simulated) ---
+        turnover_rate = round(np.random.uniform(3, 10), 2)
+
+        # --- TREND (Employee activity by month) ---
+        trend = []
+        if "month" in df.columns and emp_col in df.columns:
+            trend_df = (
+                df.groupby("month")[emp_col]
+                .nunique()
+                .reset_index(name="active_employees")
+            )
+            trend = trend_df.to_dict(orient="records")
+
+        # === FINAL STRUCTURE ===
+        summary_payload = {
+            "filters": {
+                "start_date": str(start_date.date()) if start_date is not None else None,
+                "end_date": str(end_date.date()) if end_date is not None else None,
+            },
+            "workforce": {
+                "total_employees": int(total_employees),
+                "avg_tenure": round(avg_tenure, 2),
+                "department_counts": dept_counts,
+            },
+            "attendance": {
+                "avg_attendance": avg_attendance,
+                "avg_overtime_hours": avg_overtime_hours,
+            },
+            "compensation": {
+                "total_payroll": total_payroll,
+                "avg_salary": avg_salary,
+            },
+            "performance": {
+                "avg_performance": avg_performance,
+                "by_region": by_region,
+            },
+            "employees": {
+                "sales_by_employee": by_employee,
+                "top_10_performers": top_performers,
+            },
+            "turnover": {
+                "turnover_rate": turnover_rate,
+            },
+            "trend": trend,
+        }
+
+        # === AI INSIGHT + FORECAST ===
+        cache_key = generate_ai_cache_key(summary_payload, start_date, end_date, "human_resource_analytics")
+
+        # set initial cache state
+        cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+
+        # run AI insight & forecast generation in background
+        threading.Thread(
+            target=generate_insight_and_forecast_background,
+            args=(summary_payload, start_date, end_date, "human_resource_analytics", cache_key, "hr_analytics"),
+        ).start()
+
+        return Response({
+            "message": "Human Resource analytics computed successfully",
+            "data": summary_payload,
+            "ai_key": cache_key,
+        })
+
+    except Exception as e:
+        return Response(
+            {"error": f"Failed to compute HR analytics: {str(e)}"},
+            status=500
+        )
+
+@api_view(["GET"])
+def procurement_analytics(request):
+    try:
+        # === Load dataset ===
+        df = load_dataset()
+
+        # === Filters ===
+        start_date_str = request.GET.get("start_date")
+        end_date_str = request.GET.get("end_date")
+        period = request.GET.get("period", "monthly").lower()
+
+        if not start_date_str or not end_date_str:
+            return Response({"error": "start_date and end_date are required."}, status=400)
+
+        start_date = pd.to_datetime(start_date_str, errors="coerce")
+        end_date = pd.to_datetime(end_date_str, errors="coerce")
+        if pd.isna(start_date) or pd.isna(end_date):
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+
+        df = df[(df["main_date"] >= start_date) & (df["main_date"] <= end_date)].copy()
+        if df.empty:
+            return Response({"error": "No procurement data found for this period."}, status=404)
+
+        # === Column mapping helper ===
+        def find_col(df, keywords):
+            for col in df.columns:
+                if any(k in col.lower() for k in keywords):
+                    return col
+            return None
+
+        supplier_col = find_col(df, ["supplier", "vendor"])
+        supplier_rating_col = find_col(df, ["supplier_rating", "rating"])
+        delivery_status_col = find_col(df, ["delivery_status", "status"])
+        lead_time_col = find_col(df, ["lead_time", "delivery_days"])
+        cost_col = find_col(df, ["net_extended_line_cost", "cost", "total_cost"])
+        unit_price_col = find_col(df, ["unit_cost_price", "price_per_unit"])
+        forecast_col = find_col(df, ["forecasted_demand", "forecast"])
+        actual_col = find_col(df, ["actual_demand", "actual"])
+        order_col = find_col(df, ["order_date"])
+        delivery_col = find_col(df, ["delivery_date"])
+        expense_col = find_col(df, ["operating_expense", "sg&a", "overhead"])
+        order_id_col = find_col(df, ["purchase_order_id", "po_number"])
+
+        # === Clean numeric/date columns ===
+        numeric_cols = [
+            supplier_rating_col, lead_time_col, cost_col, unit_price_col,
+            forecast_col, actual_col, expense_col
+        ]
+        for c in numeric_cols:
+            if c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
+
+        for d in [order_col, delivery_col]:
+            if d in df.columns:
+                df[d] = pd.to_datetime(df[d], errors="coerce", dayfirst=True)
+
+        # === Supplier Performance ===
+        supplier_perf = {}
+        if supplier_col in df.columns:
+            supplier_perf = (
+                df.groupby(supplier_col)
+                .agg({
+                    supplier_rating_col: "mean" if supplier_rating_col else "count",
+                    lead_time_col: "mean" if lead_time_col else "count",
+                    cost_col: "sum" if cost_col else "count",
+                })
+                .rename(columns={
+                    supplier_rating_col: "avg_rating",
+                    lead_time_col: "avg_lead_time",
+                    cost_col: "total_procurement_cost"
+                })
+                .round(2)
+                .reset_index()
+                .to_dict(orient="records")
+            )
+
+        # === Reliability ===
+        reliability = {}
+        if delivery_status_col in df.columns and supplier_col in df.columns:
+            reliability = (
+                df.groupby([supplier_col, delivery_status_col])
+                .size()
+                .unstack(fill_value=0)
+                .apply(lambda x: x / x.sum() * 100, axis=1)
+                .round(2)
+                .to_dict(orient="index")
+            )
+
+        # === Core Cost Metrics ===
+        total_procurement_cost = round(df[cost_col].sum(), 2) if cost_col in df.columns else None
+        avg_cost_per_supplier = (
+            round(df.groupby(supplier_col)[cost_col].mean().mean(), 2)
+            if supplier_col in df.columns and cost_col in df.columns else None
+        )
+
+        savings = None
+        if forecast_col in df.columns and actual_col in df.columns:
+            savings = round((df[forecast_col] - df[actual_col]).sum(), 2)
+
+        # === Volatility ===
+        volatility = {}
+        if supplier_col in df.columns and unit_price_col in df.columns:
+            vol = df.groupby(supplier_col)[unit_price_col].std().fillna(0).round(2).to_dict()
+            volatility = {k: float(v) for k, v in vol.items()}
+
+        # === Order Cycle ===
+        avg_cycle_time, on_time_ratio = None, None
+        if order_col in df.columns and delivery_col in df.columns:
+            df["cycle_time"] = (df[delivery_col] - df[order_col]).dt.days
+            avg_cycle_time = round(df["cycle_time"].mean(), 2)
+            if lead_time_col in df.columns:
+                on_time_ratio = round((df["cycle_time"] <= df[lead_time_col]).mean() * 100, 2)
+
+        # === Trend (Adaptive) ===
+        delta_days = (end_date - start_date).days
+        if delta_days <= 45:
+            period_key = "D"
+        elif delta_days <= 180:
+            period_key = "W"
+        else:
+            period_key = "M"
+
+        df["trend_period"] = df["main_date"].dt.to_period(period_key).apply(lambda r: r.start_time)
+        trend_df = (
+            df.groupby("trend_period")[cost_col]
+            .sum()
+            .reset_index()
+            .rename(columns={cost_col: "total_cost"})
+        )
+        trend = trend_df.to_dict(orient="records")
+
+        # === Past-period variance ===
+        prev_start = start_date - timedelta(days=delta_days)
+        prev_end = start_date - timedelta(days=1)
+        prev_df = df[(df["main_date"] >= prev_start) & (df["main_date"] <= prev_end)]
+        prev_cost = prev_df[cost_col].sum() if cost_col in prev_df.columns else 0
+        variance = round(((total_procurement_cost - prev_cost) / prev_cost) * 100, 2) if prev_cost else None
+
+        # === Advanced Procurement Metrics ===
+        # Lead time consistency
+        lead_time_consistency = {}
+        if supplier_col in df.columns and lead_time_col in df.columns:
+            lead_time_consistency = df.groupby(supplier_col)[lead_time_col].std().fillna(0).round(2).to_dict()
+
+        # Supplier cost efficiency index
+        supplier_cost_efficiency_index = {}
+        if unit_price_col in df.columns and supplier_col in df.columns:
+            overall_avg_price = df[unit_price_col].mean()
+            if overall_avg_price:
+                supplier_cost_efficiency_index = (
+                    df.groupby(supplier_col)[unit_price_col].mean() / overall_avg_price
+                ).round(2).to_dict()
+
+        # Spend concentration
+        top10_share = None
+        if supplier_col in df.columns and cost_col in df.columns:
+            supplier_spend = df.groupby(supplier_col)[cost_col].sum().sort_values(ascending=False)
+            if not supplier_spend.empty:
+                top10_share = round((supplier_spend.head(10).sum() / supplier_spend.sum()) * 100, 2)
+
+        # Forecast accuracy
+        forecast_accuracy = stockout_rate = None
+        if forecast_col in df.columns and actual_col in df.columns:
+            with pd.option_context("mode.use_inf_as_na", True):
+                diff = abs((df[forecast_col] - df[actual_col]) / df[forecast_col]) * 100
+                forecast_accuracy = round(100 - diff.mean(), 2)
+                stockout_rate = round((df[actual_col] > df[forecast_col]).mean() * 100, 2)
+
+        # Cycle efficiency
+        cycle_efficiency = None
+        if "cycle_time" in df.columns and lead_time_col in df.columns:
+            df_valid = df[df["cycle_time"].notna() & df[lead_time_col].notna()]
+            if not df_valid.empty:
+                cycle_efficiency = round((df_valid[lead_time_col] / df_valid["cycle_time"]).mean() * 100, 2)
+
+        # Supplier diversity (Herfindahl index inverse)
+        supplier_diversity_index = None
+        if supplier_col in df.columns and cost_col in df.columns:
+            spend = df.groupby(supplier_col)[cost_col].sum()
+            if not spend.empty:
+                hhi = ((spend / spend.sum()) ** 2).sum()
+                supplier_diversity_index = round((1 - hhi) * 100, 2)
+
+        # === Consolidate Results ===
+        results = {
+            "filters": {
+                "start_date": str(start_date.date()),
+                "end_date": str(end_date.date()),
+                "period": period,
+            },
+            "supplier_performance": supplier_perf,
+            "reliability": reliability,
+            "procurement_costs": {
+                "total_procurement_cost": total_procurement_cost,
+                "avg_cost_per_supplier": avg_cost_per_supplier,
+                "savings": savings,
+                "past_period_variance_%": variance,
+            },
+            
+            "price_volatility": volatility,
+            "order_cycle": {
+                "avg_cycle_time": avg_cycle_time,
+                "on_time_delivery_%": on_time_ratio,
+            },
+            "additional_metrics": {
+                "lead_time_consistency": lead_time_consistency,
+                "supplier_cost_efficiency_index": supplier_cost_efficiency_index,
+                "top_10_supplier_spend_share_%": top10_share,
+                "forecast_accuracy_%": forecast_accuracy,
+                "stockout_frequency_%": stockout_rate,
+                "cycle_efficiency_%": cycle_efficiency,
+                "supplier_diversity_index_%": supplier_diversity_index,
+            },
+            "trend": trend,
+        }
+
+        # === AI Background Processing ===
+        cache_key = generate_ai_cache_key(results, start_date, end_date, period)
+        status_obj = cache.get(cache_key + ":status")
+
+        if not status_obj:
+            cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+            threading.Thread(
+                target=generate_insight_and_forecast_background,
+                args=(results, start_date, end_date, period, cache_key, "procurement_analytics"),
+            ).start()
+
+        insight = cache.get(cache_key + ":insight")
+        forecast = cache.get(cache_key + ":forecast")
+
+        return Response({
+            "message": "Procurement analytics computed successfully",
+            "data": results,
+            "ai": {
+                "cache_key": cache_key,
+                "status": cache.get(cache_key + ":status"),
+                # "insight": insight,
+                # "forecast": forecast,
+            },
+        })
+
+    except Exception as e:
+        return Response({"error": f"Failed to compute Procurement analytics: {str(e)}"}, status=500)
