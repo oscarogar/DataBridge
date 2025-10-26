@@ -3692,6 +3692,182 @@ def finance_analytics(request):
     })
 
 
+# @api_view(["GET"])
+# def customer_experience_analytics(request):
+#     """
+#     Customer Experience (CX) Analytics:
+#     Focuses purely on customer satisfaction and experience — 
+#     including CSAT, feedback sentiment, lead time, on-time delivery, 
+#     campaign effectiveness, and satisfaction trends.
+#     """
+#     try:
+#         df = load_dataset()
+#     except Exception as e:
+#         return Response({"error": f"Failed to load dataset: {str(e)}"}, status=500)
+
+#     start_date_q = request.GET.get("start_date")
+#     end_date_q = request.GET.get("end_date")
+#     region_q = request.GET.get("region")
+#     channel_q = request.GET.get("channel")
+
+#     if "main_date" not in df.columns:
+#         return Response({"error": "Dataset missing 'main_date' column."}, status=500)
+
+#     # Normalize key numeric and text columns
+#     num_cols = ["customer_satisfaction_csat", "lead_time_days"]
+#     for col in num_cols:
+#         if col in df.columns:
+#             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+#     df["main_date"] = pd.to_datetime(df["main_date"], errors="coerce")
+#     df["order_date"] = pd.to_datetime(df.get("order_date", df["main_date"]), errors="coerce")
+#     df["delivery_date"] = pd.to_datetime(df.get("delivery_date", pd.NaT), errors="coerce")
+
+#     # === Date filtering ===
+#     try:
+#         start_dt = pd.to_datetime(start_date_q) if start_date_q else df["main_date"].min()
+#         end_dt = pd.to_datetime(end_date_q) if end_date_q else df["main_date"].max()
+#     except Exception as e:
+#         return Response({"error": f"Invalid date inputs: {str(e)}"}, status=400)
+
+#     df = df[(df["main_date"] >= start_dt) & (df["main_date"] <= end_dt)]
+#     if region_q and "region" in df.columns:
+#         df = df[df["region"].str.contains(region_q, case=False, na=False)]
+#     if channel_q and "channel" in df.columns:
+#         df = df[df["channel"].str.contains(channel_q, case=False, na=False)]
+
+#     if df.empty:
+#         return Response({"message": "No data found for selected filters."}, status=200)
+
+#     # === Core CX metrics ===
+#     avg_csat = round(df["customer_satisfaction_csat"].mean(), 2)
+#     feedback_count = len(df["feedback_comment"].dropna())
+
+#     positive_feedback = df["feedback_comment"].str.contains(
+#         "good|great|excellent|fast|satisfied|happy", case=False, na=False
+#     ).sum()
+#     negative_feedback = df["feedback_comment"].str.contains(
+#         "bad|slow|poor|late|disappointed|unhappy", case=False, na=False
+#     ).sum()
+
+#     positive_pct = round((positive_feedback / feedback_count) * 100, 1) if feedback_count else 0
+#     negative_pct = round((negative_feedback / feedback_count) * 100, 1) if feedback_count else 0
+
+#     # === Service delivery ===
+#     avg_lead_time = round(df["lead_time_days"].mean(), 1)
+#     on_time_delivery_rate = round(
+#         (df["delivery_status"].str.contains("Delivered", case=False, na=False).sum() / len(df)) * 100, 1
+#     )
+#     avg_days_to_delivery = (df["delivery_date"] - df["order_date"]).dt.days.mean()
+#     avg_days_to_delivery = round(avg_days_to_delivery or 0, 1)
+
+#     # === Marketing effectiveness ===
+#     top_campaigns = (
+#         df.groupby("campaign_channel")["customer_satisfaction_csat"].mean()
+#         .round(2)
+#         .sort_values(ascending=False)
+#         .head(5)
+#         .to_dict()
+#         if "campaign_channel" in df.columns
+#         else {}
+#     )
+
+#     # === Breakdown by key customer dimensions ===
+#     csat_by_region = (
+#         df.groupby("region")["customer_satisfaction_csat"].mean().round(2).to_dict()
+#         if "region" in df.columns
+#         else {}
+#     )
+#     csat_by_channel = (
+#         df.groupby("channel")["customer_satisfaction_csat"].mean().round(2).to_dict()
+#         if "channel" in df.columns
+#         else {}
+#     )
+#     csat_by_segment = (
+#         df.groupby("customer_segment")["customer_satisfaction_csat"].mean().round(2).to_dict()
+#         if "customer_segment" in df.columns
+#         else {}
+#     )
+#     csat_by_category = (
+#         df.groupby("product_category")["customer_satisfaction_csat"].mean().round(2).to_dict()
+#         if "product_category" in df.columns
+#         else {}
+#     )
+
+#     # === Previous period comparison ===
+#     period_length = (end_dt - start_dt).days or 1
+#     prev_start = start_dt - timedelta(days=period_length)
+#     prev_end = start_dt - timedelta(days=1)
+#     df_prev = df[(df["main_date"] >= prev_start) & (df["main_date"] <= prev_end)]
+
+#     avg_csat_prev = df_prev["customer_satisfaction_csat"].mean() if not df_prev.empty else 0
+#     avg_lead_time_prev = df_prev["lead_time_days"].mean() if not df_prev.empty else 0
+#     on_time_prev = (
+#         df_prev["delivery_status"].str.contains("Delivered", case=False, na=False).sum() / len(df_prev) * 100
+#         if len(df_prev) > 0
+#         else 0
+#     )
+
+#     def pct_variance(curr, prev):
+#         if not prev:
+#             return None
+#         return round(((curr - prev) / prev) * 100, 2)
+
+#     variance = {
+#         "csat_variance_%": pct_variance(avg_csat, avg_csat_prev),
+#         "lead_time_variance_%": pct_variance(avg_lead_time, avg_lead_time_prev),
+#         "on_time_delivery_variance_%": pct_variance(on_time_delivery_rate, on_time_prev),
+#     }
+
+#     # === Trend data ===
+#     trend_period = "D" if (end_dt - start_dt).days <= 45 else "W"
+#     timeline = (
+#         df.set_index("main_date")
+#         .resample(trend_period)["customer_satisfaction_csat"]
+#         .mean()
+#         .reset_index()
+#     )
+#     timeline["period"] = timeline["main_date"].dt.strftime("%Y-%m-%d" if trend_period == "D" else "W%U")
+#     trends = timeline.to_dict(orient="records")
+
+#     # === Final Payload ===
+#     cx_payload = {
+#         "summary_current": {
+#             "avg_csat": avg_csat,
+#             "positive_feedback_%": positive_pct,
+#             "negative_feedback_%": negative_pct,
+#             "avg_lead_time_days": avg_lead_time,
+#             "on_time_delivery_rate_%": on_time_delivery_rate,
+#             "avg_days_to_delivery": avg_days_to_delivery,
+#         },
+#         "summary_previous": {
+#             "avg_csat": round(avg_csat_prev, 2),
+#             "avg_lead_time_days": round(avg_lead_time_prev, 1),
+#             "on_time_delivery_rate_%": round(on_time_prev, 1),
+#         },
+#         "variance": variance,
+#         "breakdowns": {
+#             "csat_by_region": csat_by_region,
+#             "csat_by_channel": csat_by_channel,
+#             "csat_by_segment": csat_by_segment,
+#             "csat_by_category": csat_by_category,
+#         },
+#         "marketing_effectiveness": {"top_campaign_channels": top_campaigns},
+#         "trends": trends,
+#     }
+
+#     # === AI insight + forecast ===
+#     cache_key = generate_ai_cache_key(cx_payload, start_dt, end_dt, "customer_experience")
+#     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+
+#     threading.Thread(
+#         target=generate_insight_and_forecast_background,
+#         args=(cx_payload, str(start_dt.date()), str(end_dt.date()), "customer_experience_analytics", cache_key, "cx_metrics"),
+#         daemon=True,
+#     ).start()
+
+#     return Response({**cx_payload, "data_key": cache_key, "ai_status": "processing"})
+
 @api_view(["GET"])
 def customer_experience_analytics(request):
     """
@@ -3701,7 +3877,7 @@ def customer_experience_analytics(request):
     campaign effectiveness, and satisfaction trends.
     """
     try:
-        df = load_dataset()
+        df_full = load_dataset()
     except Exception as e:
         return Response({"error": f"Failed to load dataset: {str(e)}"}, status=500)
 
@@ -3710,27 +3886,27 @@ def customer_experience_analytics(request):
     region_q = request.GET.get("region")
     channel_q = request.GET.get("channel")
 
-    if "main_date" not in df.columns:
+    if "main_date" not in df_full.columns:
         return Response({"error": "Dataset missing 'main_date' column."}, status=500)
 
     # Normalize key numeric and text columns
+    df_full["main_date"] = pd.to_datetime(df_full["main_date"], errors="coerce")
+    df_full["order_date"] = pd.to_datetime(df_full.get("order_date", df_full["main_date"]), errors="coerce")
+    df_full["delivery_date"] = pd.to_datetime(df_full.get("delivery_date", pd.NaT), errors="coerce")
+
     num_cols = ["customer_satisfaction_csat", "lead_time_days"]
     for col in num_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-    df["main_date"] = pd.to_datetime(df["main_date"], errors="coerce")
-    df["order_date"] = pd.to_datetime(df.get("order_date", df["main_date"]), errors="coerce")
-    df["delivery_date"] = pd.to_datetime(df.get("delivery_date", pd.NaT), errors="coerce")
+        if col in df_full.columns:
+            df_full[col] = pd.to_numeric(df_full[col], errors="coerce").fillna(0)
 
     # === Date filtering ===
     try:
-        start_dt = pd.to_datetime(start_date_q) if start_date_q else df["main_date"].min()
-        end_dt = pd.to_datetime(end_date_q) if end_date_q else df["main_date"].max()
+        start_dt = pd.to_datetime(start_date_q) if start_date_q else df_full["main_date"].min()
+        end_dt = pd.to_datetime(end_date_q) if end_date_q else df_full["main_date"].max()
     except Exception as e:
         return Response({"error": f"Invalid date inputs: {str(e)}"}, status=400)
 
-    df = df[(df["main_date"] >= start_dt) & (df["main_date"] <= end_dt)]
+    df = df_full[(df_full["main_date"] >= start_dt) & (df_full["main_date"] <= end_dt)]
     if region_q and "region" in df.columns:
         df = df[df["region"].str.contains(region_q, case=False, na=False)]
     if channel_q and "channel" in df.columns:
@@ -3794,11 +3970,11 @@ def customer_experience_analytics(request):
         else {}
     )
 
-    # === Previous period comparison ===
+    # === Previous period comparison (fixed) ===
     period_length = (end_dt - start_dt).days or 1
     prev_start = start_dt - timedelta(days=period_length)
     prev_end = start_dt - timedelta(days=1)
-    df_prev = df[(df["main_date"] >= prev_start) & (df["main_date"] <= prev_end)]
+    df_prev = df_full[(df_full["main_date"] >= prev_start) & (df_full["main_date"] <= prev_end)]
 
     avg_csat_prev = df_prev["customer_satisfaction_csat"].mean() if not df_prev.empty else 0
     avg_lead_time_prev = df_prev["lead_time_days"].mean() if not df_prev.empty else 0
@@ -3809,7 +3985,7 @@ def customer_experience_analytics(request):
     )
 
     def pct_variance(curr, prev):
-        if not prev:
+        if prev == 0 or prev is None:
             return None
         return round(((curr - prev) / prev) * 100, 2)
 
@@ -3862,8 +4038,16 @@ def customer_experience_analytics(request):
 
     threading.Thread(
         target=generate_insight_and_forecast_background,
-        args=(cx_payload, str(start_dt.date()), str(end_dt.date()), "customer_experience_analytics", cache_key, "cx_metrics"),
+        args=(
+            cx_payload,
+            str(start_dt.date()),
+            str(end_dt.date()),
+            "customer_experience_analytics",
+            cache_key,
+            "cx_metrics",
+        ),
         daemon=True,
     ).start()
 
     return Response({**cx_payload, "data_key": cache_key, "ai_status": "processing"})
+
