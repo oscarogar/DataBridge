@@ -19,50 +19,12 @@ import hashlib
 import json
 from scipy.spatial.distance import cosine
 from scipy.stats import pearsonr
-from .utils import compute_purchase_patterns, compute_rfm, compute_clv, compute_churn, load_dataset
+from .utils import compute_purchase_patterns, compute_rfm, compute_clv, compute_churn, get_prompts_for_view, load_dataset
 def python_version_view(request):
     return JsonResponse({"python_version": sys.version})
 EXCEL_PATH = os.path.join(os.path.dirname(__file__), 'data/data_adjusted.xlsx')
 SHEET_NAME = 'salesData'
 SHEET_NAME = 'invoiceData'
-# def load_data():
-#     df = pd.read_excel(EXCEL_PATH, sheet_name=SHEET_NAME)
-#     df['Created Date'] = pd.to_datetime(df['Created Date'])
-#     return df
-
-# def load_data():
-#     # Load both sheets
-#     sales_df = pd.read_excel(EXCEL_PATH, sheet_name="salesData")
-#     invoice_df = pd.read_excel(EXCEL_PATH, sheet_name="invoiceData")
-
-#     # Convert date columns safely
-#     for df in [sales_df, invoice_df]:
-#         df["Created Date"] = pd.to_datetime(df["Created Date"], errors='coerce')
-#         if "Date Delivered" in df.columns:
-#             df["Delivery Date"] = pd.to_datetime(df["Delivery Date"], errors='coerce')
-#         else:
-#             df["Date Delivered"] = pd.NaT
-
-#     # Columns you care about
-#     common_cols = [
-#         "Sender Code", "Sender Name", "Receiver Code", "Receiver Name",
-#         "Store Code", "Store Name", "Order Number", "Barcode", "Product Code",
-#         "Product Description", "Requested Qty", "Cost Price", "Net Extended Line Cost",
-#         "Created Date", "Delivery date"
-#     ]
-
-#     sales_df = sales_df[[c for c in common_cols if c in sales_df.columns]].copy()
-#     invoice_df = invoice_df[[c for c in common_cols if c in invoice_df.columns]].copy()
-
-#     # Add source column
-#     sales_df["Source"] = "Order"
-#     invoice_df["Source"] = "Invoice"
-
-#     # Combine both for any global analysis
-#     combined_df = pd.concat([sales_df, invoice_df], ignore_index=True)
-#     combined_df.dropna(subset=["Created Date", "Sender Name"], inplace=True)
-
-#     return combined_df, sales_df, invoice_df
 
 def load_data():
     # Load both sheets
@@ -146,214 +108,6 @@ def get_insight_and_forecast(data_summary, start_date, end_date, period):
 
     return insight, forecast
 
-def get_prompts_for_view(view_name, start_date, end_date, period, granularity=None, sla_param=None, threshold_param=None):
-    """
-    Returns (insight_prompt, forecast_prompt) based on the view name and date range.
-    """
-    if view_name == "sales_trend_analytics":
-        insight_prompt = (
-            "Analyze this sales trend data in business terms. "
-            "Identify growth or decline patterns, best time periods, and significant product trends. "
-            "The currency is ZAR."
-        )
-        forecast_prompt = (
-            f"Based on the sales trend from {start_date} to {end_date}, "
-            f"forecast what the next {period} might look like. "
-            "Focus on expected patterns over time. Currency is ZAR."
-        )
-    elif view_name == "sales_analytics":
-        insight_prompt = (
-            "Explain these sales metrics in business terms. "
-            "Highlight total sales, order value trends, top products, and customer contributions. "
-            "The currency is ZAR."
-        )
-        forecast_prompt = (
-            f"Forecast sales for the next {period} period based on the current performance summary. "
-            "Be concise and business-friendly. Currency is ZAR."
-        )
-    elif view_name == "profit_margin_analytics":
-        insight_prompt = (
-            "Explain the profit margin analytics in business terms. "
-            "Highlight profit trends, margin shifts, cost efficiency, and how they affect profitability. "
-            "Point out the best-performing time periods. Currency is ZAR."
-        )
-        forecast_prompt = (
-            f"Based on the profit margin data from {start_date} to {end_date}, "
-            f"forecast profit and margin expectations for the next {period} period. "
-            "Be business-focused. Currency is ZAR."
-        )
-    elif view_name == "cost_analysis":
-            insight_prompt = (
-                "Analyze the cost trends across stores and products for the given time period. "
-                "Highlight where costs are highest, growth patterns in cost, and any notable concentration of expenses. "
-                "The currency is ZAR."
-            )
-            forecast_prompt = (
-                f"Based on the cost data from {start_date} to {end_date}, "
-                f"forecast what the total and category-level costs might look like in the next {period} period. "
-                "Provide actionable insights. Currency is ZAR."
-            )
-    elif view_name == "sales_summary":
-        insight_prompt = (
-            "Summarize this sales summary data in business terms. "
-            "Highlight order volumes, average sales values, and top-selling products. The currency is ZAR."
-        )
-        forecast_prompt = (
-            f"Based on sales summary trends from {start_date} to {end_date}, "
-            f"forecast key sales figures and product performance for the next {period}. Currency is ZAR."
-        )
-    elif view_name == "transaction_summary":
-        insight_prompt = (
-            "Analyze the transaction summary data for patterns in quantity, order value, and store/product distribution. "
-            "Highlight any shifts or notable trends in the current period vs. previous. Currency is ZAR."
-        )
-        forecast_prompt = (
-            f"Based on transactions from {start_date} to {end_date}, forecast what the next similar period might look like "
-            "in terms of transaction value, volume, and order behavior. Currency is ZAR."
-        )
-    elif view_name == "transaction_entities_analysis":
-        insight_prompt = (
-            "Analyze the transaction data by store and sender. "
-            "Identify the top-performing stores, customers, and products in terms of revenue. "
-            "Include monthly trends and revenue contribution percentages. Currency is ZAR."
-        )
-        forecast_prompt = (
-            f"Forecast which entities (stores or customers) might dominate transactions in the next {period} "
-            f"based on trends between {start_date} and {end_date}. Currency is ZAR."
-        )
-    elif view_name == "transaction_timing_analysis":
-        insight_prompt = (
-            "Analyze this transaction timing data to identify patterns in when transactions are most frequent. "
-            "Highlight the most active weekdays and hours, and summarize fulfillment time trends."
-        )
-        forecast_prompt = (
-            f"Based on transaction timing data from {start_date} to {end_date}, "
-            f"forecast potential fulfillment delays and peak order times for the next {period}. "
-            "Mention expected fast/slow delivery periods."
-        )
-    elif view_name == "product_demand_analysis":
-        insight_prompt = (
-            "Analyze this product demand data. Identify the most demanded products, "
-            "rising trends, velocity of demand, and seasonality patterns (by month and weekday)."
-        )
-        forecast_prompt = (
-            f"Based on product demand from {start_date} to {end_date}, "
-            f"forecast product demand trends for the next {period}. Highlight expected high and low demand products."
-        )
-
-    elif view_name == "product_revenue_analysis":
-        insight_prompt = (
-            "Analyze this product revenue data. Highlight top revenue-generating products, revenue yield per product, "
-            "and store-level product performance. Identify seasonality trends by month and weekday."
-        )
-        forecast_prompt = (
-            f"Based on product revenue from {start_date} to {end_date}, forecast revenue trends for the next {period}. "
-            f"Identify which products or store segments are expected to grow or decline."
-        )
-    elif view_name == "product_correlation_analysis":
-        insight_prompt = (
-            "Based on product correlation data, analyze which product combinations frequently appear in the same orders. "
-            "Highlight affinity scores, most central products in the network, and the most common co-purchased product pairs."
-        )
-        forecast_prompt = (
-            f"Using product correlation patterns from {start_date} to {end_date}, predict which product affinities are likely to strengthen. "
-            f"Forecast emerging co-purchase patterns and central products expected to drive bundled sales."
-        )
-    elif view_name == "product_trend_analysis":
-        insight_prompt = (
-            "Analyze revenue, quantity, and frequency trends of top products over the selected period. "
-            "Summarize which products are gaining or losing momentum and highlight any notable shifts in product performance."
-        )
-        forecast_prompt = (
-            f"Based on recent trends in revenue, quantity, and frequency for top products between {start_date} and {end_date}, "
-            f"forecast which products are expected to increase in popularity or decline in the next few {granularity}-based periods."
-        )
-    elif view_name == "order_analysis":
-        insight_prompt = (
-            "Summarize order patterns and behaviors over the selected period. "
-            "Identify customer and store order dynamics, fulfillment delays, and order volume fluctuations."
-        )
-        forecast_prompt = (
-            f"Based on order trends, value, and fulfillment metrics from {start_date} to {end_date}, "
-            f"forecast expected order patterns and fulfillment efficiency for the next {granularity}-based period."
-        )
-    elif view_name == "order_fulfillment_analysis":
-        insight_prompt = (
-            f"Analyze order fulfillment performance between {start_date} and {end_date}, "
-            f"including SLA compliance (within {sla_param or 5} days), cancellation rate, delivery efficiency, and fulfillment time distribution. "
-            f"Highlight key bottlenecks or outstanding performers by store or sender."
-        )
-        forecast_prompt = (
-            f"Based on the order fulfillment trends and SLA compliance from {start_date} to {end_date}, "
-            f"predict expected fulfillment performance and SLA adherence for the next similar period."
-        )
-    elif view_name == "order_calculation_analysis":
-        insight_prompt = (
-            f"Analyze order-level behavior between {start_date} and {end_date}, focusing on average value, item count, and product diversity. "
-            f"Highlight the proportion and characteristics of orders above and below the {threshold_param} threshold, and give insights into value distribution."
-        )
-        forecast_prompt = (
-            f"Based on the current distribution of order values and item patterns from {start_date} to {end_date}, "
-            f"predict expected order trends and high-value order dynamics for the next similar period."
-        )
-    elif view_name == "customer_segmentation_analysis":
-        insight_prompt = (
-            f"Analyze customer behavior from {start_date} to {end_date} using RFM (Recency, Frequency, Monetary) segmentation. "
-            f"Highlight customer distribution, top-value segments, recent revenue growth, and potential churn."
-        )
-        forecast_prompt = (
-            f"Based on customer RFM behavior from {start_date} to {end_date}, forecast future customer segments, revenue growth, and likely churn rates "
-            f"in the next equivalent period."
-        )
-    elif view_name == "customer_purchase_pattern_analysis":
-        insight_prompt = (
-            f"Analyze detailed customer purchasing behavior from {start_date} to {end_date}, including order frequency, "
-            f"preferred days/hours, top products, repeat patterns, and segments (New, Returning, Frequent). "
-            f"Highlight the most engaged and predictable customer profiles."
-        )
-        forecast_prompt = (
-            f"Based on the purchasing behavior from {start_date} to {end_date}, forecast the expected number of repeat, frequent, and new customers "
-            f"and likely preferred products and ordering times in the next period."
-        )
-    elif view_name == "invoice_trend_and_conversion":
-        insight_prompt = (
-            f"Analyze invoice trends and order-to-invoice conversion performance between {start_date} and {end_date}. "
-            f"Highlight the conversion rate of orders to invoices, key fluctuations over time, and any seasonal or store-level differences. "
-            f"Identify which stores or senders have the most efficient order-to-invoice processes and discuss possible causes of delays."
-        )
-        forecast_prompt = (
-            f"Based on invoice trend and conversion data from {start_date} to {end_date}, "
-            f"forecast the expected order-to-invoice conversion rate and invoicing volume for the next {period}. "
-            f"Identify stores or senders likely to improve or decline in efficiency."
-        )
-
-    elif view_name == "product_performance_analysis":
-        insight_prompt = (
-            f"Analyze product performance between {start_date} and {end_date}. "
-            f"Highlight top and bottom performing products by profit, revenue, and demand. "
-            f"Discuss average profit margin, return and refund rates, and identify trends in demand across months. "
-            f"If available, include comments on inventory turnover and stock holding efficiency. "
-            f"Summarize store or product categories that are driving or dragging profitability. "
-            f"The currency is ZAR."
-        )
-        forecast_prompt = (
-            f"Based on product performance trends from {start_date} to {end_date}, "
-            f"forecast demand, profitability, and inventory turnover expectations for the next {period}. "
-            f"Identify which products or categories are likely to gain or lose momentum."
-        )
-
-    else:
-        # Default fallback for unrecognized views
-        insight_prompt = (
-            "Explain the analytics results in simple business terms. "
-            "Highlight any noticeable trends or performance indicators. Currency is ZAR."
-        )
-        forecast_prompt = (
-            f"Based on trends from {start_date} to {end_date}, forecast what the next {period} might look like. "
-            "Currency is ZAR."
-        )
-
-    return insight_prompt, forecast_prompt
 
 def generate_ai_cache_key(summary_payload, start_date, end_date, period):
     def convert(obj):
@@ -388,25 +142,6 @@ def safe_pct_change(row):
     if previous == 0:
         return "new product" if current > 0 else 0
     return round(((current - previous) / previous) * 100, 2)
-
-
-def parse_float(value):
-    try:
-        return float(str(value).replace(",", ""))
-    except:
-        return 0.0
-
-def get_sub_frequency(main_freq):
-    if main_freq == "Q":
-        return "M", "%B"
-    elif main_freq == "M":
-        return "W-MON", "Week %W"
-    elif main_freq == "W-MON" or main_freq == "W":
-        return "D", "%Y-%m-%d"
-    elif main_freq == "D":
-        return "H", "%H:%M"
-    else:
-        return "D", "%Y-%m-%d"  # default fallback
 
 def generate_insight_and_forecast_background(data_summary, start_date, end_date, period, cache_key, view_name="default"):
     try:
@@ -741,6 +476,327 @@ def sales_trend_analytics(request):
         return Response({"error": f"Failed to compute trend analysis: {str(e)}"}, status=500)
 
 @api_view(["GET"])
+def profit_margin_analytics(request):
+    period = request.GET.get("period", "monthly")
+    start_date = request.GET.get("start_date")
+    end_date = request.GET.get("end_date")
+
+    try:
+        # Load and normalize dataset
+        df = load_dataset()
+    except Exception as e:
+        return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
+
+    # ===== Ensure numeric columns are parsed correctly =====
+    numeric_cols = [
+        "unit_cost_price",
+        "net_extended_line_cost",
+        "requested_qty",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    # ===== Compute Profit & Profit Margin =====
+    df["profit"] = df["net_extended_line_cost"] - (df["unit_cost_price"] * df["requested_qty"])
+    df["profit_margin"] = df.apply(
+        lambda row: (row["profit"] / row["net_extended_line_cost"] * 100) if row["net_extended_line_cost"] else 0,
+        axis=1
+    )
+
+    today = df["main_date"].max().normalize()
+
+    # ===== Determine current and previous period ranges =====
+    if start_date and end_date:
+        start_current = pd.to_datetime(start_date)
+        end_current = pd.to_datetime(end_date)
+        duration = end_current - start_current
+        start_previous = start_current - duration - timedelta(days=1)
+        end_previous = start_current - timedelta(days=1)
+
+        days = duration.days
+        if days <= 7:
+            freq = "D"; label_format = "%Y-%m-%d"
+        elif days <= 31:
+            freq = "W-MON"; label_format = "Week %W"
+        elif days <= 365:
+            freq = "M"; label_format = "%B"
+        else:
+            freq = "Q"; label_format = "Q%q %Y"
+    else:
+        if period == "weekly":
+            start_current = today - timedelta(days=today.weekday())
+            end_current = start_current + timedelta(days=6)
+            start_previous = start_current - timedelta(weeks=1)
+            end_previous = start_current - timedelta(days=1)
+            freq = "D"; label_format = "%Y-%m-%d"
+        elif period == "monthly":
+            start_current = today.replace(day=1)
+            end_current = (start_current + relativedelta(months=1)) - timedelta(days=1)
+            start_previous = start_current - relativedelta(months=1)
+            end_previous = start_current - timedelta(days=1)
+            freq = "W-MON"; label_format = "Week %W"
+        elif period == "yearly":
+            start_current = today.replace(month=1, day=1)
+            end_current = today.replace(month=12, day=31)
+            start_previous = start_current - relativedelta(years=1)
+            end_previous = start_current - timedelta(days=1)
+            freq = "M"; label_format = "%B"
+        else:
+            return Response({"error": "Missing or invalid period. Provide either a valid 'period' or both 'start_date' and 'end_date'."}, status=400)
+
+    # ===== Filter current & previous periods =====
+    df_current = df[(df["main_date"] >= start_current) & (df["main_date"] <= end_current)]
+    df_previous = df[(df["main_date"] >= start_previous) & (df["main_date"] <= end_previous)]
+
+    if df_current.empty:
+        return Response({"error": "No profit data found for the current period."}, status=404)
+    if df_previous.empty:
+        return Response({"error": "No profit data found for the previous period."}, status=404)
+
+    # ===== Summary metrics =====
+    profit_current = df_current["profit"].sum()
+    revenue_current = df_current["net_extended_line_cost"].sum()
+    profit_margin_current = (profit_current / revenue_current * 100) if revenue_current else 0
+
+    profit_previous = df_previous["profit"].sum()
+    revenue_previous = df_previous["net_extended_line_cost"].sum()
+    profit_margin_previous = (profit_previous / revenue_previous * 100) if revenue_previous else 0
+
+    profit_growth = ((profit_current - profit_previous) / profit_previous * 100) if profit_previous else (100 if profit_current else 0)
+
+    # ===== Breakdown helper =====
+    def breakdown(df_slice):
+        df_slice = df_slice.copy()
+        df_slice["period"] = df_slice["main_date"].dt.to_period(freq).dt.start_time
+        summary = df_slice.groupby("period").agg(
+            revenue=("net_extended_line_cost", "sum"),
+            cost=("unit_cost_price", lambda x: (x * df_slice.loc[x.index, "requested_qty"]).sum()),
+            profit=("profit", "sum"),
+        ).reset_index()
+        summary["label"] = summary["period"].dt.strftime(label_format)
+        summary["profit_margin"] = summary.apply(
+            lambda row: (row["profit"] / row["revenue"] * 100) if row["revenue"] else 0, axis=1
+        )
+        return summary.round(2).sort_values("period")
+
+    current_breakdown = breakdown(df_current)
+    previous_breakdown = breakdown(df_previous)
+
+    # ===== Cache and AI insight =====
+    summary_payload = {
+        "period": period or "custom",
+        "start_current": str(start_current.date()),
+        "end_current": str(end_current.date()),
+        "total_profit_current": round(profit_current, 2),
+        "total_profit_previous": round(profit_previous, 2),
+        "profit_growth_percent": round(profit_growth, 2),
+        "profit_margin_current": round(profit_margin_current, 2),
+        "profit_margin_previous": round(profit_margin_previous, 2),
+        "current_period_breakdown": current_breakdown.to_dict(orient="records"),
+        "previous_period_breakdown": previous_breakdown.to_dict(orient="records"),
+    }
+
+    cache_key = generate_ai_cache_key(summary_payload, start_current, end_current, period)
+    cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+    cache.set(cache_key + ":insight", "Processing...", timeout=3600)
+    cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
+    threading.Thread(target=generate_insight_and_forecast_background, args=(
+        summary_payload, start_current, end_current, period, cache_key, "profit_margin_analytics"
+    )).start()
+
+    return Response({
+        **summary_payload,
+        "ai_status": "processing",
+        "data_key": cache_key
+    })
+
+@api_view(['GET'])
+def cost_analysis(request):
+    try:
+        # Load dataset
+        df = load_dataset()
+    except Exception as e:
+        return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
+
+    # Ensure numeric columns are parsed
+    numeric_cols = ["net_extended_line_cost", "unit_cost_price", "requested_qty"]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    df["main_date"] = pd.to_datetime(df["main_date"], errors="coerce")
+
+    # ===== Query params =====
+    period = request.query_params.get("period")
+    store_filter = request.query_params.get("store")
+    product_filter = request.query_params.get("product")
+    start_date_param = request.query_params.get("start_date")
+    end_date_param = request.query_params.get("end_date")
+
+    today = pd.Timestamp.today().normalize()
+    trend_freq = "W"
+
+    # ===== Determine current & previous period =====
+    try:
+        if start_date_param and end_date_param:
+            start_current = pd.to_datetime(start_date_param)
+            end_current = pd.to_datetime(end_date_param)
+
+            if start_current > end_current:
+                return Response({"error": "start_date cannot be after end_date."}, status=400)
+
+            delta_days = (end_current - start_current).days
+            trend_freq = "D" if delta_days <= 14 else "W" if delta_days <= 60 else "M"
+
+            # ✅ Auto-generate previous period of equal length
+            end_previous = start_current - pd.Timedelta(days=1)
+            start_previous = end_previous - pd.Timedelta(days=delta_days)
+
+        elif period == "week":
+            start_current = today - pd.to_timedelta(today.weekday(), unit='d')
+            end_current = start_current + pd.Timedelta(days=6)
+            start_previous = start_current - pd.Timedelta(days=7)
+            end_previous = start_previous + pd.Timedelta(days=6)
+            trend_freq = "D"
+
+        elif period == "month":
+            start_current = today.replace(day=1)
+            end_current = start_current + pd.offsets.MonthEnd(1)
+            start_previous = (start_current - pd.offsets.MonthBegin(1)).replace(day=1)
+            end_previous = start_previous + pd.offsets.MonthEnd(1)
+            trend_freq = "W"
+
+        elif period == "year":
+            start_current = today.replace(month=1, day=1)
+            end_current = today + pd.offsets.YearEnd(0)
+            start_previous = (start_current - pd.offsets.YearBegin(1)).replace(month=1, day=1)
+            end_previous = start_previous + pd.offsets.YearEnd(1)
+            trend_freq = "M"
+
+        else:
+            return Response({"error": "Provide valid 'period' or 'start_date' and 'end_date'."}, status=400)
+    except Exception as e:
+        return Response({"error": f"Invalid date input: {str(e)}"}, status=400)
+
+
+    # ===== Validate date range =====
+    min_date = df["main_date"].min()
+    max_date = df["main_date"].max()
+    if start_current > max_date or end_current < min_date:
+        return Response({
+            "error": "Provided date range is outside the available data range.",
+            "data_available_from": str(min_date.date()),
+            "data_available_to": str(max_date.date())
+        }, status=404)
+
+    # ===== Filter current & previous periods =====
+    df_current = df[(df["main_date"] >= start_current) & (df["main_date"] <= end_current)].copy()
+    df_previous = (
+        df[(df["main_date"] >= start_previous) & (df["main_date"] <= end_previous)].copy()
+        if start_previous and end_previous else pd.DataFrame(columns=df.columns)
+    )
+
+    if df_current.empty:
+        return Response({"error": "No data available for the current period."}, status=404)
+
+    # ===== Apply store / product filters =====
+    if store_filter:
+        df_current = df_current[df_current["store_name"].str.lower() == store_filter.lower()]
+    if product_filter:
+        df_current = df_current[df_current["product_description"].str.lower() == product_filter.lower()]
+
+    # ===== Metrics =====
+    total_cost_current = df_current["net_extended_line_cost"].sum()
+    total_cost_previous = df_previous["net_extended_line_cost"].sum() if not df_previous.empty else 0
+    growth_percent = ((total_cost_current - total_cost_previous) / total_cost_previous * 100) if total_cost_previous else 0
+
+    # ===== Fix trend_freq for pandas resample (avoid FutureWarning) =====
+    trend_freq_map = {"M": "ME", "W": "W", "D": "D"}
+    trend_freq = trend_freq_map.get(trend_freq, "W")
+
+    # ===== Trend =====
+    trend_current = df_current.set_index("main_date")["net_extended_line_cost"].resample(trend_freq).sum().reset_index()
+    trend_current["net_extended_line_cost"] = trend_current["net_extended_line_cost"].round(2)
+
+    if not df_previous.empty:
+        trend_previous = df_previous.set_index("main_date")["net_extended_line_cost"].resample(trend_freq).sum().reset_index()
+        trend_previous["net_extended_line_cost"] = trend_previous["net_extended_line_cost"].round(2)
+    else:
+        trend_previous = []
+
+    # ===== Product & Store breakdowns =====
+    product_costs = (
+        df_current.groupby("product_description")["net_extended_line_cost"]
+        .sum().reset_index().rename(columns={"net_extended_line_cost": "total_cost"})
+        .sort_values("total_cost", ascending=False)
+    )
+    product_costs["total_cost"] = product_costs["total_cost"].round(2)
+
+    store_costs = (
+        df_current.groupby("store_name")["net_extended_line_cost"]
+        .sum().reset_index().rename(columns={"net_extended_line_cost": "total_cost"})
+        .sort_values("total_cost", ascending=False)
+    )
+    store_costs["total_cost"] = store_costs["total_cost"].round(2)
+
+    product_count_per_store = (
+        df_current.groupby("store_name")["product_description"]
+        .nunique().reset_index().rename(columns={"product_description": "unique_product_count"})
+    )
+
+    most_expensive_product = product_costs.iloc[0].to_dict() if not product_costs.empty else {}
+    most_expensive_store = store_costs.iloc[0].to_dict() if not store_costs.empty else {}
+
+    # ===== AI Insight / Forecast =====
+    summary_payload = {
+        "total_cost_current": round(total_cost_current, 2),
+        "total_cost_previous": round(total_cost_previous, 2) if not df_previous.empty else None,
+        "cost_growth_percent": round(growth_percent, 2) if not df_previous.empty else None,
+        "most_expensive_product": most_expensive_product,
+        "most_expensive_store": most_expensive_store,
+        "product_cost_breakdown": product_costs.to_dict(orient="records"),
+        "store_cost_breakdown": store_costs.to_dict(orient="records"),
+    }
+
+    cache_key = generate_ai_cache_key(summary_payload, start_current, end_current, period or "custom")
+    cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+    cache.set(cache_key + ":insight", "Processing...", timeout=3600)
+    cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
+    threading.Thread(
+        target=generate_insight_and_forecast_background,
+        args=(summary_payload, str(start_current.date()), str(end_current.date()), period, cache_key, "cost_analysis")
+    ).start()
+
+    return Response({
+        "mode": "custom" if start_date_param else period,
+        "start_current": start_current.date(),
+        "end_current": end_current.date(),
+        "start_previous": start_previous.date() if start_previous else None,
+        "end_previous": end_previous.date() if end_previous else None,
+        "total_cost_current": round(total_cost_current, 2),
+        "total_cost_previous": round(total_cost_previous, 2) if not df_previous.empty else None,
+        "cost_growth_percent": round(growth_percent, 2) if not df_previous.empty else None,
+        "current_period_cost_trend": trend_current.to_dict(orient="records"),
+        "previous_period_cost_trend": trend_previous if isinstance(trend_previous, list) else trend_previous.to_dict(orient="records"),
+        "product_cost_breakdown": product_costs.to_dict(orient="records"),
+        "store_cost_breakdown": store_costs.to_dict(orient="records"),
+        "products_involved": sorted(df_current["product_description"].dropna().unique().tolist()),
+        "stores_involved": sorted(df_current["store_name"].dropna().unique().tolist()),
+        "unique_products_per_store": product_count_per_store.to_dict(orient="records"),
+        "most_expensive_product": most_expensive_product,
+        "most_expensive_store": most_expensive_store,
+        "filters_applied": {
+            "store": store_filter,
+            "product": product_filter,
+            "start_date": start_date_param,
+            "end_date": end_date_param
+        },
+        "data_key": cache_key
+    })
+
+
+@api_view(["GET"])
 def sales_summary(request):
     """
     Returns an enhanced sales overview for the selected period.
@@ -869,7 +925,7 @@ def sales_summary(request):
     }
 
     # ====== AI BACKGROUND GENERATION ======
-    period = "custom"
+    period = "monthly"
     cache_key = generate_ai_cache_key(summary_payload, start_date or min_date, end_date or max_date, period)
     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
     threading.Thread(
@@ -1023,7 +1079,7 @@ def transaction_summary(request):
 
     threading.Thread(
         target=generate_insight_and_forecast_background,
-        args=(summary_data, start_date, end_date, "custom", cache_key, "transaction_summary"),
+        args=(summary_data, start_date, end_date, period, cache_key, "transaction_summary"),
     ).start()
 
     # ===== Response payload =====
@@ -1167,7 +1223,7 @@ def transaction_entities_analysis(request):
         }
 
         # ====== UNIFIED CACHE KEY + AI BACKGROUND GENERATION ======
-        cache_key = generate_ai_cache_key(summary_data, start_date, end_date, "transaction_entities")
+        cache_key = generate_ai_cache_key(summary_data, start_date, end_date, "monthly")
 
         cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
         cache.set(cache_key + ":insight", "Processing...", timeout=3600)
@@ -1175,7 +1231,7 @@ def transaction_entities_analysis(request):
 
         threading.Thread(
             target=generate_insight_and_forecast_background,
-            args=(summary_data, start_date, end_date, "transaction_entities", cache_key, "transaction_entities_analysis"),
+            args=(summary_data, start_date, end_date, "monthly", cache_key, "transaction_entities_analysis"),
         ).start()
 
     except Exception as e:
@@ -1214,15 +1270,18 @@ def transaction_timing_analysis(request):
     except Exception as e:
         return Response({"error": f"Failed to load dataset: {str(e)}"}, status=500)
 
-    # === Validate date fields ===
+    # === Validate required columns ===
     if "order_date" not in df.columns:
         return Response({"error": "order_date column missing in dataset."}, status=500)
 
+    # === Parse dates ===
     df["order_date"] = pd.to_datetime(df["order_date"], errors="coerce")
-    df["delivery_date"] = pd.to_datetime(df["delivery_date"], errors="coerce")
+    if "delivery_date" in df.columns:
+        df["delivery_date"] = pd.to_datetime(df["delivery_date"], errors="coerce")
+
     df = df.dropna(subset=["order_date"])
 
-    # === Filter by requested range ===
+    # === Date filtering ===
     try:
         if start_date:
             start = pd.to_datetime(start_date)
@@ -1237,7 +1296,7 @@ def transaction_timing_analysis(request):
         return Response({"message": "No transactions found for the selected period"}, status=200)
 
     try:
-        # === Time-based breakdown ===
+        # === Frequency breakdowns ===
         df["Month"] = df["order_date"].dt.to_period("M").astype(str)
         df["Week"] = df["order_date"].dt.to_period("W").astype(str)
         df["Day"] = df["order_date"].dt.date.astype(str)
@@ -1251,41 +1310,47 @@ def transaction_timing_analysis(request):
         freq_by_hour = df.groupby("Hour").size().sort_index().to_dict()
 
         # === Fulfillment metrics ===
-        df = df.dropna(subset=["delivery_date"])
-        df["Fulfillment Days"] = (df["delivery_date"] - df["order_date"]).dt.days
+        fulfillment_summary = {"average_days": None, "fastest_days": None, "slowest_days": None}
+        fulfillment_trend = {}
 
-        avg_fulfillment = df["Fulfillment Days"].mean()
-        best_fulfillment = df["Fulfillment Days"].min()
-        worst_fulfillment = df["Fulfillment Days"].max()
+        if "delivery_date" in df.columns:
+            df_valid = df.dropna(subset=["delivery_date"]).copy()
+            df_valid["Fulfillment Days"] = (df_valid["delivery_date"] - df_valid["order_date"]).dt.days
 
-        # === Fulfillment trend ===
-        df["Month"] = df["order_date"].dt.to_period("M").astype(str)
-        fulfillment_trend = df.groupby("Month")["Fulfillment Days"].mean().round(2).to_dict()
+            avg_fulfillment = df_valid["Fulfillment Days"].mean()
+            best_fulfillment = df_valid["Fulfillment Days"].min()
+            worst_fulfillment = df_valid["Fulfillment Days"].max()
+
+            fulfillment_summary = {
+                "average_days": round(avg_fulfillment, 2) if not pd.isna(avg_fulfillment) else None,
+                "fastest_days": int(best_fulfillment) if not pd.isna(best_fulfillment) else None,
+                "slowest_days": int(worst_fulfillment) if not pd.isna(worst_fulfillment) else None,
+            }
+
+            # Fulfillment trend (monthly)
+            df_valid["Month"] = df_valid["order_date"].dt.to_period("M").astype(str)
+            fulfillment_trend = df_valid.groupby("Month")["Fulfillment Days"].mean().round(2).to_dict()
 
     except Exception as e:
         return Response({"error": f"Error during aggregation: {str(e)}"}, status=500)
 
     # === Background AI analysis ===
-    cache_key = f"transaction_timing_analysis:{start_date or 'null'}:{end_date or 'null'}"
     period = "month"
-
-    cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-    cache.set(cache_key + ":insight", "Processing...", timeout=3600)
-    cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
 
     summary = {
         "frequency_by_weekday": freq_by_weekday,
-        "fulfillment_summary": {
-            "average_days": round(avg_fulfillment, 2) if not pd.isna(avg_fulfillment) else None,
-            "fastest_days": int(best_fulfillment) if not pd.isna(best_fulfillment) else None,
-            "slowest_days": int(worst_fulfillment) if not pd.isna(worst_fulfillment) else None,
-        }
+        "fulfillment_summary": fulfillment_summary,
     }
 
-    threading.Thread(
-        target=generate_insight_and_forecast_background,
-        args=(summary, start_date, end_date, period, cache_key, "transaction_timing_analysis"),
-    ).start()
+    # ✅ Use helper to generate deterministic cache key
+    cache_key = generate_ai_cache_key(summary, start_date, end_date, period)
+
+    if not cache.get(cache_key + ":status"):
+        cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+        threading.Thread(
+            target=generate_insight_and_forecast_background,
+            args=(summary, start_date, end_date, period, cache_key, "transaction_timing_analysis"),
+        ).start()
 
     # === Final response ===
     return Response({
@@ -1297,13 +1362,12 @@ def transaction_timing_analysis(request):
             "by_hour": freq_by_hour
         },
         "fulfillment": {
-            "average_days": round(avg_fulfillment, 2) if not pd.isna(avg_fulfillment) else None,
-            "fastest_days": int(best_fulfillment) if not pd.isna(best_fulfillment) else None,
-            "slowest_days": int(worst_fulfillment) if not pd.isna(worst_fulfillment) else None,
+            **fulfillment_summary,
             "monthly_trend": fulfillment_trend
         },
-        "data_key": cache_key
+        "ai": {"cache_key": cache_key, "status": cache.get(cache_key + ":status")},
     })
+
 
 @api_view(["GET"])
 def product_demand_analysis(request):
@@ -1775,7 +1839,7 @@ def product_correlation_analysis(request):
         "central_products": central_products
     }
     # === AI INSIGHT THREAD ===
-    cache_key = generate_ai_cache_key(summary_payload, start_date, end_date, period="month")
+    cache_key = generate_ai_cache_key(summary_payload, start_date, end_date, "month")
     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
     cache.set(cache_key + ":insight", "Processing...", timeout=3600)
     cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
@@ -2258,89 +2322,6 @@ def order_calculation_analysis(request):
     except Exception as e:
         return Response({"error": f"Analysis failed: {str(e)}"}, status=500)
 
-# @api_view(["GET"])
-# def customer_segmentation_analysis(request):
-    start_date = request.GET.get("start_date")
-    end_date = request.GET.get("end_date")
-    today = datetime.today().date()
-
-    try:
-        df = load_data()
-        df = filter_by_date(df, start_date, end_date)
-        df["Created Date"] = pd.to_datetime(df["Created Date"], errors='coerce')
-        df.dropna(subset=["Created Date", "Sender Name"], inplace=True)
-    except Exception as e:
-        return Response({"error": f"Data error: {str(e)}"}, status=400)
-
-    if df.empty:
-        return Response({"message": "No transaction data found for the selected period."}, status=200)
-
-    try:
-        # ===== RFM Calculation =====
-        rfm = df.groupby("Sender Name").agg({
-            "Created Date": lambda x: (today - x.max().date()).days,   # Recency
-            "Order Number": "nunique",                                 # Frequency
-            "Net Extended Line Cost": "sum"                            # Monetary
-        }).reset_index()
-
-        rfm.columns = ["Customer", "Recency", "Frequency", "Monetary"]
-        rfm["Segment"] = pd.qcut(rfm["Monetary"], 4, labels=["Low", "Mid-Low", "Mid-High", "High"])
-
-        # ===== Revenue Over Time by Customer =====
-        df["Period"] = df["Created Date"].dt.to_period("M").astype(str)
-        revenue_time = df.groupby(["Period", "Sender Name"])["Net Extended Line Cost"].sum().reset_index()
-        revenue_pivot = revenue_time.pivot(index="Period", columns="Sender Name", values="Net Extended Line Cost").fillna(0).round(2)
-        revenue_over_time = revenue_pivot.to_dict(orient="index")
-
-        # ===== Top Growing Customers by Revenue (Last 2 Periods) =====
-        if len(revenue_pivot.index) >= 2:
-            latest_two = revenue_pivot.iloc[-2:]
-            revenue_diff = latest_two.diff().iloc[-1].sort_values(ascending=False)
-            top_growing_customers = revenue_diff.head(5).round(2).to_dict()
-        else:
-            top_growing_customers = {}
-
-        # ===== Customer Churn Indication =====
-        churn_threshold = 30
-        churned_customers = rfm[rfm["Recency"] > churn_threshold].sort_values("Recency", ascending=False)
-        churn_list = churned_customers[["Customer", "Recency", "Monetary"]].head(10).round(2).to_dict(orient="records")
-
-        # === AI Background Task Trigger ===
-        cache_key = f"customer_segmentation_analysis:{start_date or 'null'}:{end_date or 'null'}"
-        cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-        cache.set(cache_key + ":insight", "Processing...", timeout=3600)
-        cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
-
-        threading.Thread(
-            target=generate_insight_and_forecast_background,
-            args=({
-                "rfm": rfm.round(2).to_dict(orient="records"),
-                "summary": {
-                    "total_customers": rfm.shape[0],
-                    "high_value_customers": int((rfm["Segment"] == "High").sum()),
-                    "low_value_customers": int((rfm["Segment"] == "Low").sum()),
-                },
-                "revenue_over_time": revenue_over_time,
-                "top_growing_customers": top_growing_customers,
-                "churned_customers": churn_list
-            }, start_date, end_date, None, cache_key, "customer_segmentation_analysis")
-        ).start()
-
-        return Response({
-            "customer_rfm": rfm.round(2).to_dict(orient="records"),
-            "summary": {
-                "total_customers": rfm.shape[0],
-                "high_value_customers": int((rfm["Segment"] == "High").sum()),
-                "low_value_customers": int((rfm["Segment"] == "Low").sum()),
-            },
-            "revenue_over_time": revenue_over_time,
-            "top_growing_customers": top_growing_customers,
-            "churned_customers": churn_list,
-            "data_key": cache_key
-        })
-    except Exception as e:
-        return Response({"error": f"Failed to compute customer segmentation: {str(e)}"}, status=500)
-
 @api_view(["GET"])
 def customer_segmentation_analysis(request):
     start_date = request.GET.get("start_date")
@@ -2418,7 +2399,7 @@ def customer_segmentation_analysis(request):
             "top_growing_customers": top_growing_customers,
             "churned_customers": churn_list
         }
-        cache_key = generate_ai_cache_key(summary_payload, start_date, end_date, period="monthly")
+        cache_key = generate_ai_cache_key(summary_payload, start_date, end_date,"monthly")
 
         cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
         cache.set(cache_key + ":insight", "Processing...", timeout=3600)
@@ -2426,7 +2407,7 @@ def customer_segmentation_analysis(request):
 
         threading.Thread(
             target=generate_insight_and_forecast_background,
-            args=(summary_payload, start_date, end_date, None, cache_key, "customer_segmentation_analysis")
+            args=(summary_payload, start_date, end_date, "monthly", cache_key, "customer_segmentation_analysis")
         ).start()
 
         return Response({
@@ -2440,7 +2421,6 @@ def customer_segmentation_analysis(request):
 
     except Exception as e:
         return Response({"error": f"Failed to compute segmentation: {str(e)}"}, status=500)
-
 
 @api_view(["GET"])
 def customer_purchase_pattern_analysis(request):
@@ -2488,7 +2468,7 @@ def customer_purchase_pattern_analysis(request):
         # ===== START BACKGROUND THREAD =====
         threading.Thread(
             target=generate_insight_and_forecast_background,
-            args=(summary_payload, start_date, end_date, None, cache_key, "customer_purchase_patterns")
+            args=(summary_payload, start_date, end_date, "monthly", cache_key, "customer_purchase_pattern_analysis")
         ).start()
 
         return Response({
@@ -2583,7 +2563,7 @@ def retail_inventory_analysis(request):
 
         threading.Thread(
             target=generate_insight_and_forecast_background,
-            args=(summary_payload, start_date, end_date, None, cache_key, "retail_inventory_analysis")
+            args=(summary_payload, start_date, end_date, "monthly", cache_key, "retail_inventory_analysis")
         ).start()
 
         return Response({
@@ -2681,7 +2661,7 @@ def promotion_analysis(request):
 
         threading.Thread(
             target=generate_insight_and_forecast_background,
-            args=(summary_payload, start_date, end_date, None, cache_key, "promotion_analysis")
+            args=(summary_payload, start_date, end_date, "monthly", cache_key, "promotion_analysis")
         ).start()
 
         return Response({
@@ -2692,353 +2672,6 @@ def promotion_analysis(request):
 
     except Exception as e:
         return Response({"error": f"Failed to compute promotion analytics: {str(e)}"}, status=500)
-
-@api_view(["GET"])
-def profit_margin_analytics(request):
-    period = request.GET.get("period", "monthly")
-    start_date = request.GET.get("start_date")
-    end_date = request.GET.get("end_date")
-
-    try:
-        # Load and normalize dataset
-        df = load_dataset()
-    except Exception as e:
-        return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
-
-    # ===== Ensure numeric columns are parsed correctly =====
-    numeric_cols = [
-        "unit_cost_price",
-        "net_extended_line_cost",
-        "requested_qty",
-    ]
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-    # ===== Compute Profit & Profit Margin =====
-    df["profit"] = df["net_extended_line_cost"] - (df["unit_cost_price"] * df["requested_qty"])
-    df["profit_margin"] = df.apply(
-        lambda row: (row["profit"] / row["net_extended_line_cost"] * 100) if row["net_extended_line_cost"] else 0,
-        axis=1
-    )
-
-    today = df["main_date"].max().normalize()
-
-    # ===== Determine current and previous period ranges =====
-    if start_date and end_date:
-        start_current = pd.to_datetime(start_date)
-        end_current = pd.to_datetime(end_date)
-        duration = end_current - start_current
-        start_previous = start_current - duration - timedelta(days=1)
-        end_previous = start_current - timedelta(days=1)
-
-        days = duration.days
-        if days <= 7:
-            freq = "D"; label_format = "%Y-%m-%d"
-        elif days <= 31:
-            freq = "W-MON"; label_format = "Week %W"
-        elif days <= 365:
-            freq = "M"; label_format = "%B"
-        else:
-            freq = "Q"; label_format = "Q%q %Y"
-    else:
-        if period == "weekly":
-            start_current = today - timedelta(days=today.weekday())
-            end_current = start_current + timedelta(days=6)
-            start_previous = start_current - timedelta(weeks=1)
-            end_previous = start_current - timedelta(days=1)
-            freq = "D"; label_format = "%Y-%m-%d"
-        elif period == "monthly":
-            start_current = today.replace(day=1)
-            end_current = (start_current + relativedelta(months=1)) - timedelta(days=1)
-            start_previous = start_current - relativedelta(months=1)
-            end_previous = start_current - timedelta(days=1)
-            freq = "W-MON"; label_format = "Week %W"
-        elif period == "yearly":
-            start_current = today.replace(month=1, day=1)
-            end_current = today.replace(month=12, day=31)
-            start_previous = start_current - relativedelta(years=1)
-            end_previous = start_current - timedelta(days=1)
-            freq = "M"; label_format = "%B"
-        else:
-            return Response({"error": "Missing or invalid period. Provide either a valid 'period' or both 'start_date' and 'end_date'."}, status=400)
-
-    # ===== Filter current & previous periods =====
-    df_current = df[(df["main_date"] >= start_current) & (df["main_date"] <= end_current)]
-    df_previous = df[(df["main_date"] >= start_previous) & (df["main_date"] <= end_previous)]
-
-    if df_current.empty:
-        return Response({"error": "No profit data found for the current period."}, status=404)
-    if df_previous.empty:
-        return Response({"error": "No profit data found for the previous period."}, status=404)
-
-    # ===== Summary metrics =====
-    profit_current = df_current["profit"].sum()
-    revenue_current = df_current["net_extended_line_cost"].sum()
-    profit_margin_current = (profit_current / revenue_current * 100) if revenue_current else 0
-
-    profit_previous = df_previous["profit"].sum()
-    revenue_previous = df_previous["net_extended_line_cost"].sum()
-    profit_margin_previous = (profit_previous / revenue_previous * 100) if revenue_previous else 0
-
-    profit_growth = ((profit_current - profit_previous) / profit_previous * 100) if profit_previous else (100 if profit_current else 0)
-
-    # ===== Breakdown helper =====
-    def breakdown(df_slice):
-        df_slice = df_slice.copy()
-        df_slice["period"] = df_slice["main_date"].dt.to_period(freq).dt.start_time
-        summary = df_slice.groupby("period").agg(
-            revenue=("net_extended_line_cost", "sum"),
-            cost=("unit_cost_price", lambda x: (x * df_slice.loc[x.index, "requested_qty"]).sum()),
-            profit=("profit", "sum"),
-        ).reset_index()
-        summary["label"] = summary["period"].dt.strftime(label_format)
-        summary["profit_margin"] = summary.apply(
-            lambda row: (row["profit"] / row["revenue"] * 100) if row["revenue"] else 0, axis=1
-        )
-        return summary.round(2).sort_values("period")
-
-    current_breakdown = breakdown(df_current)
-    previous_breakdown = breakdown(df_previous)
-
-    # ===== Cache and AI insight =====
-    summary_payload = {
-        "period": period or "custom",
-        "start_current": str(start_current.date()),
-        "end_current": str(end_current.date()),
-        "total_profit_current": round(profit_current, 2),
-        "total_profit_previous": round(profit_previous, 2),
-        "profit_growth_percent": round(profit_growth, 2),
-        "profit_margin_current": round(profit_margin_current, 2),
-        "profit_margin_previous": round(profit_margin_previous, 2),
-        "current_period_breakdown": current_breakdown.to_dict(orient="records"),
-        "previous_period_breakdown": previous_breakdown.to_dict(orient="records"),
-    }
-
-    cache_key = generate_ai_cache_key(summary_payload, start_current, end_current, period)
-    cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-    cache.set(cache_key + ":insight", "Processing...", timeout=3600)
-    cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
-    threading.Thread(target=generate_insight_and_forecast_background, args=(
-        summary_payload, start_current, end_current, period, cache_key, "profit_margin_analytics"
-    )).start()
-
-    return Response({
-        **summary_payload,
-        "ai_status": "processing",
-        "data_key": cache_key
-    })
-
-@api_view(['GET'])
-def cost_analysis(request):
-    try:
-        # Load dataset
-        df = load_dataset()
-    except Exception as e:
-        return Response({"error": f"Failed to load data: {str(e)}"}, status=500)
-
-    # Ensure numeric columns are parsed
-    numeric_cols = ["net_extended_line_cost", "unit_cost_price", "requested_qty"]
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-
-    df["main_date"] = pd.to_datetime(df["main_date"], errors="coerce")
-
-    # ===== Query params =====
-    period = request.query_params.get("period")
-    store_filter = request.query_params.get("store")
-    product_filter = request.query_params.get("product")
-    start_date_param = request.query_params.get("start_date")
-    end_date_param = request.query_params.get("end_date")
-
-    today = pd.Timestamp.today().normalize()
-    trend_freq = "W"
-
-    # ===== Determine current & previous period =====
-    try:
-        if start_date_param and end_date_param:
-            start_current = pd.to_datetime(start_date_param)
-            end_current = pd.to_datetime(end_date_param)
-
-            if start_current > end_current:
-                return Response({"error": "start_date cannot be after end_date."}, status=400)
-
-            delta_days = (end_current - start_current).days
-            trend_freq = "D" if delta_days <= 14 else "W" if delta_days <= 60 else "M"
-
-            # ✅ Auto-generate previous period of equal length
-            end_previous = start_current - pd.Timedelta(days=1)
-            start_previous = end_previous - pd.Timedelta(days=delta_days)
-
-        elif period == "week":
-            start_current = today - pd.to_timedelta(today.weekday(), unit='d')
-            end_current = start_current + pd.Timedelta(days=6)
-            start_previous = start_current - pd.Timedelta(days=7)
-            end_previous = start_previous + pd.Timedelta(days=6)
-            trend_freq = "D"
-
-        elif period == "month":
-            start_current = today.replace(day=1)
-            end_current = start_current + pd.offsets.MonthEnd(1)
-            start_previous = (start_current - pd.offsets.MonthBegin(1)).replace(day=1)
-            end_previous = start_previous + pd.offsets.MonthEnd(1)
-            trend_freq = "W"
-
-        elif period == "year":
-            start_current = today.replace(month=1, day=1)
-            end_current = today + pd.offsets.YearEnd(0)
-            start_previous = (start_current - pd.offsets.YearBegin(1)).replace(month=1, day=1)
-            end_previous = start_previous + pd.offsets.YearEnd(1)
-            trend_freq = "M"
-
-        else:
-            return Response({"error": "Provide valid 'period' or 'start_date' and 'end_date'."}, status=400)
-    except Exception as e:
-        return Response({"error": f"Invalid date input: {str(e)}"}, status=400)
-
-
-    # ===== Validate date range =====
-    min_date = df["main_date"].min()
-    max_date = df["main_date"].max()
-    if start_current > max_date or end_current < min_date:
-        return Response({
-            "error": "Provided date range is outside the available data range.",
-            "data_available_from": str(min_date.date()),
-            "data_available_to": str(max_date.date())
-        }, status=404)
-
-    # ===== Filter current & previous periods =====
-    df_current = df[(df["main_date"] >= start_current) & (df["main_date"] <= end_current)].copy()
-    df_previous = (
-        df[(df["main_date"] >= start_previous) & (df["main_date"] <= end_previous)].copy()
-        if start_previous and end_previous else pd.DataFrame(columns=df.columns)
-    )
-
-    if df_current.empty:
-        return Response({"error": "No data available for the current period."}, status=404)
-
-    # ===== Apply store / product filters =====
-    if store_filter:
-        df_current = df_current[df_current["store_name"].str.lower() == store_filter.lower()]
-    if product_filter:
-        df_current = df_current[df_current["product_description"].str.lower() == product_filter.lower()]
-
-    # ===== Metrics =====
-    total_cost_current = df_current["net_extended_line_cost"].sum()
-    total_cost_previous = df_previous["net_extended_line_cost"].sum() if not df_previous.empty else 0
-    growth_percent = ((total_cost_current - total_cost_previous) / total_cost_previous * 100) if total_cost_previous else 0
-
-    # ===== Fix trend_freq for pandas resample (avoid FutureWarning) =====
-    trend_freq_map = {"M": "ME", "W": "W", "D": "D"}
-    trend_freq = trend_freq_map.get(trend_freq, "W")
-
-    # ===== Trend =====
-    trend_current = df_current.set_index("main_date")["net_extended_line_cost"].resample(trend_freq).sum().reset_index()
-    trend_current["net_extended_line_cost"] = trend_current["net_extended_line_cost"].round(2)
-
-    if not df_previous.empty:
-        trend_previous = df_previous.set_index("main_date")["net_extended_line_cost"].resample(trend_freq).sum().reset_index()
-        trend_previous["net_extended_line_cost"] = trend_previous["net_extended_line_cost"].round(2)
-    else:
-        trend_previous = []
-
-    # ===== Product & Store breakdowns =====
-    product_costs = (
-        df_current.groupby("product_description")["net_extended_line_cost"]
-        .sum().reset_index().rename(columns={"net_extended_line_cost": "total_cost"})
-        .sort_values("total_cost", ascending=False)
-    )
-    product_costs["total_cost"] = product_costs["total_cost"].round(2)
-
-    store_costs = (
-        df_current.groupby("store_name")["net_extended_line_cost"]
-        .sum().reset_index().rename(columns={"net_extended_line_cost": "total_cost"})
-        .sort_values("total_cost", ascending=False)
-    )
-    store_costs["total_cost"] = store_costs["total_cost"].round(2)
-
-    product_count_per_store = (
-        df_current.groupby("store_name")["product_description"]
-        .nunique().reset_index().rename(columns={"product_description": "unique_product_count"})
-    )
-
-    most_expensive_product = product_costs.iloc[0].to_dict() if not product_costs.empty else {}
-    most_expensive_store = store_costs.iloc[0].to_dict() if not store_costs.empty else {}
-
-    # ===== AI Insight / Forecast =====
-    summary_payload = {
-        "total_cost_current": round(total_cost_current, 2),
-        "total_cost_previous": round(total_cost_previous, 2) if not df_previous.empty else None,
-        "cost_growth_percent": round(growth_percent, 2) if not df_previous.empty else None,
-        "most_expensive_product": most_expensive_product,
-        "most_expensive_store": most_expensive_store,
-        "product_cost_breakdown": product_costs.to_dict(orient="records"),
-        "store_cost_breakdown": store_costs.to_dict(orient="records"),
-    }
-
-    cache_key = generate_ai_cache_key(summary_payload, start_current, end_current, period or "custom")
-    cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
-    cache.set(cache_key + ":insight", "Processing...", timeout=3600)
-    cache.set(cache_key + ":forecast", "Processing...", timeout=3600)
-    threading.Thread(
-        target=generate_insight_and_forecast_background,
-        args=(summary_payload, str(start_current.date()), str(end_current.date()), period or "custom", cache_key, "cost_analysis")
-    ).start()
-
-    return Response({
-        "mode": "custom" if start_date_param else period,
-        "start_current": start_current.date(),
-        "end_current": end_current.date(),
-        "start_previous": start_previous.date() if start_previous else None,
-        "end_previous": end_previous.date() if end_previous else None,
-        "total_cost_current": round(total_cost_current, 2),
-        "total_cost_previous": round(total_cost_previous, 2) if not df_previous.empty else None,
-        "cost_growth_percent": round(growth_percent, 2) if not df_previous.empty else None,
-        "current_period_cost_trend": trend_current.to_dict(orient="records"),
-        "previous_period_cost_trend": trend_previous if isinstance(trend_previous, list) else trend_previous.to_dict(orient="records"),
-        "product_cost_breakdown": product_costs.to_dict(orient="records"),
-        "store_cost_breakdown": store_costs.to_dict(orient="records"),
-        "products_involved": sorted(df_current["product_description"].dropna().unique().tolist()),
-        "stores_involved": sorted(df_current["store_name"].dropna().unique().tolist()),
-        "unique_products_per_store": product_count_per_store.to_dict(orient="records"),
-        "most_expensive_product": most_expensive_product,
-        "most_expensive_store": most_expensive_store,
-        "filters_applied": {
-            "store": store_filter,
-            "product": product_filter,
-            "start_date": start_date_param,
-            "end_date": end_date_param
-        },
-        "data_key": cache_key
-    })
-
-
-
-'''DEPRECATED'''
-@api_view(['GET'])
-def list_all_products(request):
-    try:
-        combined_df, sales_df, invoice_df = load_data()
-        df= combined_df
-
-        # Clean and normalize product fields
-        df['Product Description'] = df['Product Description'].fillna('').str.strip()
-        # df['Product Code'] = df['Product Code'].fillna('').astype(str).str.strip()
-        # df['Barcode'] = df['Barcode'].fillna('').astype(str).str.strip()
-
-        # Get unique products
-        # products = df[['Product Code', 'Product Description', 'Barcode']].drop_duplicates()
-        products = df[['Product Description']].drop_duplicates()
-        products = products.sort_values(by='Product Description')
-
-        # Convert to list of dicts
-        product_list = products.to_dict(orient='records')
-
-        return Response(product_list, status=status.HTTP_200_OK)
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(["GET"])
@@ -3150,11 +2783,11 @@ def operations_metrics(request):
     }
 
     # === AI Insight + Forecast ===
-    cache_key = generate_ai_cache_key(summary_payload, start_date, end_date, "operations")
+    cache_key = generate_ai_cache_key(summary_payload, start_date, end_date, "monthly")
     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
     threading.Thread(
         target=generate_insight_and_forecast_background,
-        args=(summary_payload, str(start_date.date()), str(end_date.date()), "operations", cache_key, "operations_metrics")
+        args=(summary_payload, start_date, end_date, "monthly", cache_key, "operations_metrics")
     ).start()
 
     return Response({
@@ -3335,11 +2968,11 @@ def finance_analytics(request):
     }
 
     # === AI insight + forecast ===
-    cache_key = generate_ai_cache_key(summary_payload, start_dt, end_dt, "operations")
+    cache_key = generate_ai_cache_key(summary_payload, start_dt, end_dt, "monthly")
     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
     threading.Thread(
         target=generate_insight_and_forecast_background,
-        args=(summary_payload, str(start_dt.date()), str(end_dt.date()), "operations", cache_key, "operations_metrics"),
+        args=(summary_payload, str(start_dt.date()), str(end_dt.date()), "monthly", cache_key, "finance_analytics"),
         daemon=True,
     ).start()
 
@@ -3514,18 +3147,18 @@ def customer_experience_analytics(request):
     }
 
     # === AI insight + forecast ===
-    cache_key = generate_ai_cache_key(cx_payload, start_dt, end_dt, "customer_experience")
+    cache_key = generate_ai_cache_key(cx_payload, start_dt, end_dt, "monthly")
     cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
 
     threading.Thread(
         target=generate_insight_and_forecast_background,
         args=(
             cx_payload,
-            str(start_dt.date()),
-            str(end_dt.date()),
-            "customer_experience_analytics",
+            start_date_q,
+            end_date_q,
+            "monthly",
             cache_key,
-            "cx_metrics",
+            "customer_experience_analytics",
         ),
         daemon=True,
     ).start()
@@ -3668,7 +3301,7 @@ def human_resource_analytics(request):
         }
 
         # === AI INSIGHT + FORECAST ===
-        cache_key = generate_ai_cache_key(summary_payload, start_date, end_date, "human_resource_analytics")
+        cache_key = generate_ai_cache_key(summary_payload, start_date, end_date, "monthly")
 
         # set initial cache state
         cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
@@ -3676,7 +3309,7 @@ def human_resource_analytics(request):
         # run AI insight & forecast generation in background
         threading.Thread(
             target=generate_insight_and_forecast_background,
-            args=(summary_payload, start_date, end_date, "human_resource_analytics", cache_key, "hr_analytics"),
+            args=(summary_payload, start_date, end_date, "monthly", cache_key, "human_resource_analytics"),
         ).start()
 
         return Response({
@@ -3710,6 +3343,7 @@ def procurement_analytics(request):
         if pd.isna(start_date) or pd.isna(end_date):
             return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
 
+        # === Date filter ===
         df = df[(df["main_date"] >= start_date) & (df["main_date"] <= end_date)].copy()
         if df.empty:
             return Response({"error": "No procurement data found for this period."}, status=404)
@@ -3740,27 +3374,27 @@ def procurement_analytics(request):
             forecast_col, actual_col, expense_col
         ]
         for c in numeric_cols:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
+            if c and c in df.columns:
+                df[c] = pd.to_numeric(df[c], errors="coerce").replace([np.inf, -np.inf], np.nan)
 
         for d in [order_col, delivery_col]:
-            if d in df.columns:
+            if d and d in df.columns:
                 df[d] = pd.to_datetime(df[d], errors="coerce", dayfirst=True)
 
         # === Supplier Performance ===
-        supplier_perf = {}
-        if supplier_col in df.columns:
+        supplier_perf = []
+        if supplier_col and supplier_col in df.columns:
             supplier_perf = (
                 df.groupby(supplier_col)
                 .agg({
-                    supplier_rating_col: "mean" if supplier_rating_col else "count",
-                    lead_time_col: "mean" if lead_time_col else "count",
-                    cost_col: "sum" if cost_col else "count",
+                    supplier_rating_col: "mean" if supplier_rating_col in df.columns else "count",
+                    lead_time_col: "mean" if lead_time_col in df.columns else "count",
+                    cost_col: "sum" if cost_col in df.columns else "count",
                 })
                 .rename(columns={
                     supplier_rating_col: "avg_rating",
                     lead_time_col: "avg_lead_time",
-                    cost_col: "total_procurement_cost"
+                    cost_col: "total_procurement_cost",
                 })
                 .round(2)
                 .reset_index()
@@ -3769,13 +3403,12 @@ def procurement_analytics(request):
 
         # === Reliability ===
         reliability = {}
-        if delivery_status_col in df.columns and supplier_col in df.columns:
+        if delivery_status_col and supplier_col and all(c in df.columns for c in [supplier_col, delivery_status_col]):
             reliability = (
                 df.groupby([supplier_col, delivery_status_col])
                 .size()
                 .unstack(fill_value=0)
-                .apply(lambda x: x / x.sum() * 100, axis=1)
-                .round(2)
+                .apply(lambda x: (x / x.sum() * 100).round(2), axis=1)
                 .to_dict(orient="index")
             )
 
@@ -3783,7 +3416,7 @@ def procurement_analytics(request):
         total_procurement_cost = round(df[cost_col].sum(), 2) if cost_col in df.columns else None
         avg_cost_per_supplier = (
             round(df.groupby(supplier_col)[cost_col].mean().mean(), 2)
-            if supplier_col in df.columns and cost_col in df.columns else None
+            if supplier_col and cost_col in df.columns else None
         )
 
         savings = None
@@ -3792,35 +3425,31 @@ def procurement_analytics(request):
 
         # === Volatility ===
         volatility = {}
-        if supplier_col in df.columns and unit_price_col in df.columns:
+        if supplier_col and unit_price_col in df.columns:
             vol = df.groupby(supplier_col)[unit_price_col].std().fillna(0).round(2).to_dict()
             volatility = {k: float(v) for k, v in vol.items()}
 
         # === Order Cycle ===
         avg_cycle_time, on_time_ratio = None, None
-        if order_col in df.columns and delivery_col in df.columns:
+        if order_col and delivery_col in df.columns:
             df["cycle_time"] = (df[delivery_col] - df[order_col]).dt.days
             avg_cycle_time = round(df["cycle_time"].mean(), 2)
-            if lead_time_col in df.columns:
+            if lead_time_col and lead_time_col in df.columns:
                 on_time_ratio = round((df["cycle_time"] <= df[lead_time_col]).mean() * 100, 2)
 
         # === Trend (Adaptive) ===
         delta_days = (end_date - start_date).days
-        if delta_days <= 45:
-            period_key = "D"
-        elif delta_days <= 180:
-            period_key = "W"
-        else:
-            period_key = "M"
+        period_key = "D" if delta_days <= 45 else ("W" if delta_days <= 180 else "M")
 
         df["trend_period"] = df["main_date"].dt.to_period(period_key).apply(lambda r: r.start_time)
-        trend_df = (
+        trend = (
             df.groupby("trend_period")[cost_col]
             .sum()
             .reset_index()
             .rename(columns={cost_col: "total_cost"})
+            .to_dict(orient="records")
+            if cost_col in df.columns else []
         )
-        trend = trend_df.to_dict(orient="records")
 
         # === Past-period variance ===
         prev_start = start_date - timedelta(days=delta_days)
@@ -3830,45 +3459,43 @@ def procurement_analytics(request):
         variance = round(((total_procurement_cost - prev_cost) / prev_cost) * 100, 2) if prev_cost else None
 
         # === Advanced Procurement Metrics ===
+        lead_time_consistency, supplier_cost_efficiency_index = {}, {}
+        top10_share, forecast_accuracy, stockout_rate, cycle_efficiency, supplier_diversity_index = [None] * 5
+
         # Lead time consistency
-        lead_time_consistency = {}
-        if supplier_col in df.columns and lead_time_col in df.columns:
+        if supplier_col and lead_time_col in df.columns:
             lead_time_consistency = df.groupby(supplier_col)[lead_time_col].std().fillna(0).round(2).to_dict()
 
-        # Supplier cost efficiency index
-        supplier_cost_efficiency_index = {}
-        if unit_price_col in df.columns and supplier_col in df.columns:
-            overall_avg_price = df[unit_price_col].mean()
-            if overall_avg_price:
+        # Supplier cost efficiency
+        if supplier_col and unit_price_col in df.columns:
+            avg_price = df[unit_price_col].mean()
+            if avg_price:
                 supplier_cost_efficiency_index = (
-                    df.groupby(supplier_col)[unit_price_col].mean() / overall_avg_price
+                    df.groupby(supplier_col)[unit_price_col].mean() / avg_price
                 ).round(2).to_dict()
 
         # Spend concentration
-        top10_share = None
-        if supplier_col in df.columns and cost_col in df.columns:
+        if supplier_col and cost_col in df.columns:
             supplier_spend = df.groupby(supplier_col)[cost_col].sum().sort_values(ascending=False)
             if not supplier_spend.empty:
                 top10_share = round((supplier_spend.head(10).sum() / supplier_spend.sum()) * 100, 2)
 
-        # Forecast accuracy
-        forecast_accuracy = stockout_rate = None
+        # Forecast accuracy & stockout
         if forecast_col in df.columns and actual_col in df.columns:
-            with pd.option_context("mode.use_inf_as_na", True):
-                diff = abs((df[forecast_col] - df[actual_col]) / df[forecast_col]) * 100
+            valid = df[df[forecast_col].notna() & df[actual_col].notna() & (df[forecast_col] != 0)]
+            if not valid.empty:
+                diff = abs((valid[forecast_col] - valid[actual_col]) / valid[forecast_col]) * 100
                 forecast_accuracy = round(100 - diff.mean(), 2)
-                stockout_rate = round((df[actual_col] > df[forecast_col]).mean() * 100, 2)
+                stockout_rate = round((valid[actual_col] > valid[forecast_col]).mean() * 100, 2)
 
         # Cycle efficiency
-        cycle_efficiency = None
         if "cycle_time" in df.columns and lead_time_col in df.columns:
             df_valid = df[df["cycle_time"].notna() & df[lead_time_col].notna()]
             if not df_valid.empty:
                 cycle_efficiency = round((df_valid[lead_time_col] / df_valid["cycle_time"]).mean() * 100, 2)
 
-        # Supplier diversity (Herfindahl index inverse)
-        supplier_diversity_index = None
-        if supplier_col in df.columns and cost_col in df.columns:
+        # Supplier diversity index (HHI)
+        if supplier_col and cost_col in df.columns:
             spend = df.groupby(supplier_col)[cost_col].sum()
             if not spend.empty:
                 hhi = ((spend / spend.sum()) ** 2).sum()
@@ -3876,11 +3503,7 @@ def procurement_analytics(request):
 
         # === Consolidate Results ===
         results = {
-            "filters": {
-                "start_date": str(start_date.date()),
-                "end_date": str(end_date.date()),
-                "period": period,
-            },
+            "filters": {"start_date": str(start_date.date()), "end_date": str(end_date.date()), "period": period},
             "supplier_performance": supplier_perf,
             "reliability": reliability,
             "procurement_costs": {
@@ -3889,12 +3512,8 @@ def procurement_analytics(request):
                 "savings": savings,
                 "past_period_variance_%": variance,
             },
-            
             "price_volatility": volatility,
-            "order_cycle": {
-                "avg_cycle_time": avg_cycle_time,
-                "on_time_delivery_%": on_time_ratio,
-            },
+            "order_cycle": {"avg_cycle_time": avg_cycle_time, "on_time_delivery_%": on_time_ratio},
             "additional_metrics": {
                 "lead_time_consistency": lead_time_consistency,
                 "supplier_cost_efficiency_index": supplier_cost_efficiency_index,
@@ -3907,29 +3526,19 @@ def procurement_analytics(request):
             "trend": trend,
         }
 
-        # === AI Background Processing ===
+        # === AI Background Thread ===
         cache_key = generate_ai_cache_key(results, start_date, end_date, period)
-        status_obj = cache.get(cache_key + ":status")
-
-        if not status_obj:
+        if not cache.get(cache_key + ":status"):
             cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
             threading.Thread(
                 target=generate_insight_and_forecast_background,
                 args=(results, start_date, end_date, period, cache_key, "procurement_analytics"),
             ).start()
 
-        insight = cache.get(cache_key + ":insight")
-        forecast = cache.get(cache_key + ":forecast")
-
         return Response({
             "message": "Procurement analytics computed successfully",
             "data": results,
-            "ai": {
-                "cache_key": cache_key,
-                "status": cache.get(cache_key + ":status"),
-                # "insight": insight,
-                # "forecast": forecast,
-            },
+            "ai": {"cache_key": cache_key, "status": cache.get(cache_key + ":status")},
         })
 
     except Exception as e:
