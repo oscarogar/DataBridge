@@ -143,16 +143,104 @@ def safe_pct_change(row):
         return "new product" if current > 0 else 0
     return round(((current - previous) / previous) * 100, 2)
 
+# def generate_insight_and_forecast_background(data_summary, start_date, end_date, period, cache_key, view_name="default"):
+#     try:
+#         insight_prompt, forecast_prompt = get_prompts_for_view(view_name, start_date, end_date, period)
+
+#         insight = generate_insight(insight_prompt, data_summary)
+#         forecast = generate_insight(forecast_prompt, data_summary, role="You are a business forecaster.")
+
+#         cache.set(cache_key + ":insight", insight, timeout=3600)
+#         cache.set(cache_key + ":forecast", forecast, timeout=3600)
+#         cache.set(cache_key + ":status", {"insight": "completed", "forecast": "completed"}, timeout=3600)
+#     except Exception as e:
+#         cache.set(cache_key + ":insight", f"Insight generation failed: {str(e)}", timeout=3600)
+#         cache.set(cache_key + ":forecast", f"Forecast generation failed: {str(e)}", timeout=3600)
+#         cache.set(cache_key + ":status", {"insight": "failed", "forecast": "failed"}, timeout=3600)
+
 def generate_insight_and_forecast_background(data_summary, start_date, end_date, period, cache_key, view_name="default"):
+    import json
+    from django.core.cache import cache
+
+    def summarize_if_large(text):
+        """Auto-summarize text if it exceeds model token limits."""
+        MAX_CHARS = 18000  # ~6k tokens (safe for GPT-4/5-mini)
+        if len(text) <= MAX_CHARS:
+            return text
+
+        try:
+            from openai import OpenAI
+            import os
+
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+            summary_prompt = (
+                "The following dataset summary is too long. "
+                "Please provide a concise version highlighting key metrics, patterns, and anomalies. "
+                "Keep it factual and within 1500 words.\n\n"
+                f"DATA:\n{text[:40000]}"  # Only send first 40k chars to prevent recursion
+            )
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",  # lightweight and cheap summarizer
+                messages=[
+                    {"role": "system", "content": "You are a data summarization assistant."},
+                    {"role": "user", "content": summary_prompt},
+                ],
+                max_tokens=1500,
+                temperature=0.3,
+            )
+
+            summarized_text = response.choices[0].message.content.strip()
+            return summarized_text or text[:MAX_CHARS]
+
+        except Exception as e:
+            # fallback if summarization fails
+            return (
+                "DATA TOO LARGE — fallback truncation applied. "
+                "Only a portion of the dataset is shown below:\n"
+                + text[-MAX_CHARS:]
+            )
+
     try:
+        # ---- STEP 1: Normalize dataset ----
+        if isinstance(data_summary, (list, dict)):
+            data_summary_text = json.dumps(data_summary)
+        else:
+            data_summary_text = str(data_summary)
+
+        # ---- STEP 2: Summarize if too large ----
+        data_summary_text = summarize_if_large(data_summary_text)
+
+        # ---- STEP 3: Generate Prompts ----
         insight_prompt, forecast_prompt = get_prompts_for_view(view_name, start_date, end_date, period)
 
-        insight = generate_insight(insight_prompt, data_summary)
-        forecast = generate_insight(forecast_prompt, data_summary, role="You are a business forecaster.")
+        # ---- STEP 4: Generate Insight ----
+        try:
+            insight = generate_insight(insight_prompt, data_summary_text)
+        except Exception as e:
+            insight = f"Insight generation failed: {str(e)}"
 
+        # ---- STEP 5: Generate Forecast ----
+        try:
+            forecast = generate_insight(
+                forecast_prompt, data_summary_text, role="You are a business forecaster."
+            )
+        except Exception as e:
+            forecast = f"Forecast generation failed: {str(e)}"
+
+        # ---- STEP 6: Cache Results ----
         cache.set(cache_key + ":insight", insight, timeout=3600)
         cache.set(cache_key + ":forecast", forecast, timeout=3600)
-        cache.set(cache_key + ":status", {"insight": "completed", "forecast": "completed"}, timeout=3600)
+        cache.set(
+            cache_key + ":status",
+            {
+                "insight": "completed" if "failed" not in insight else "failed",
+                "forecast": "completed" if "failed" not in forecast else "failed",
+            },
+            timeout=3600,
+        )
+
     except Exception as e:
         cache.set(cache_key + ":insight", f"Insight generation failed: {str(e)}", timeout=3600)
         cache.set(cache_key + ":forecast", f"Forecast generation failed: {str(e)}", timeout=3600)
