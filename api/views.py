@@ -3412,10 +3412,245 @@ def human_resource_analytics(request):
             status=500
         )
 
+# @api_view(["GET"])
+# def procurement_analytics(request):
+#     try:
+#         # === Load dataset ===
+#         df = load_dataset()
+
+#         # === Filters ===
+#         start_date_str = request.GET.get("start_date")
+#         end_date_str = request.GET.get("end_date")
+#         period = request.GET.get("period", "monthly").lower()
+
+#         if not start_date_str or not end_date_str:
+#             return Response({"error": "start_date and end_date are required."}, status=400)
+
+#         start_date = pd.to_datetime(start_date_str, errors="coerce")
+#         end_date = pd.to_datetime(end_date_str, errors="coerce")
+#         if pd.isna(start_date) or pd.isna(end_date):
+#             return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+
+#         # === Date filter ===
+#         df = df[(df["main_date"] >= start_date) & (df["main_date"] <= end_date)].copy()
+#         if df.empty:
+#             return Response({"error": "No procurement data found for this period."}, status=404)
+
+#         # === Column mapping helper ===
+#         def find_col(df, keywords):
+#             for col in df.columns:
+#                 if any(k in col.lower() for k in keywords):
+#                     return col
+#             return None
+
+#         supplier_col = find_col(df, ["supplier", "vendor"])
+#         supplier_rating_col = find_col(df, ["supplier_rating", "rating"])
+#         delivery_status_col = find_col(df, ["delivery_status", "status"])
+#         lead_time_col = find_col(df, ["lead_time", "delivery_days"])
+#         cost_col = find_col(df, ["net_extended_line_cost", "cost", "total_cost"])
+#         unit_price_col = find_col(df, ["unit_cost_price", "price_per_unit"])
+#         forecast_col = find_col(df, ["forecasted_demand", "forecast"])
+#         actual_col = find_col(df, ["actual_demand", "actual"])
+#         order_col = find_col(df, ["order_date"])
+#         delivery_col = find_col(df, ["delivery_date"])
+#         expense_col = find_col(df, ["operating_expense", "sg&a", "overhead"])
+#         order_id_col = find_col(df, ["purchase_order_id", "po_number"])
+
+#         # === Clean numeric/date columns ===
+#         numeric_cols = [
+#             supplier_rating_col, lead_time_col, cost_col, unit_price_col,
+#             forecast_col, actual_col, expense_col
+#         ]
+#         for c in numeric_cols:
+#             if c and c in df.columns:
+#                 df[c] = pd.to_numeric(df[c], errors="coerce").replace([np.inf, -np.inf], np.nan)
+
+#         for d in [order_col, delivery_col]:
+#             if d and d in df.columns:
+#                 df[d] = pd.to_datetime(df[d], errors="coerce", dayfirst=True)
+
+#         # === Supplier Performance ===
+#         supplier_perf = []
+#         if supplier_col and supplier_col in df.columns:
+#             supplier_perf = (
+#                 df.groupby(supplier_col)
+#                 .agg({
+#                     supplier_rating_col: "mean" if supplier_rating_col in df.columns else "count",
+#                     lead_time_col: "mean" if lead_time_col in df.columns else "count",
+#                     cost_col: "sum" if cost_col in df.columns else "count",
+#                 })
+#                 .rename(columns={
+#                     supplier_rating_col: "avg_rating",
+#                     lead_time_col: "avg_lead_time",
+#                     cost_col: "total_procurement_cost",
+#                 })
+#                 .round(2)
+#                 .reset_index()
+#                 .to_dict(orient="records")
+#             )
+
+#         # === Reliability ===
+#         reliability = {}
+#         if delivery_status_col and supplier_col and all(c in df.columns for c in [supplier_col, delivery_status_col]):
+#             reliability = (
+#                 df.groupby([supplier_col, delivery_status_col])
+#                 .size()
+#                 .unstack(fill_value=0)
+#                 .apply(lambda x: (x / x.sum() * 100).round(2), axis=1)
+#                 .to_dict(orient="index")
+#             )
+
+#         # === Core Cost Metrics ===
+#         total_procurement_cost = round(df[cost_col].sum(), 2) if cost_col in df.columns else None
+#         avg_cost_per_supplier = (
+#             round(df.groupby(supplier_col)[cost_col].mean().mean(), 2)
+#             if supplier_col and cost_col in df.columns else None
+#         )
+
+#         savings = None
+#         if forecast_col in df.columns and actual_col in df.columns:
+#             savings = round((df[forecast_col] - df[actual_col]).sum(), 2)
+
+#         # === Volatility ===
+#         volatility = {}
+#         if supplier_col and unit_price_col in df.columns:
+#             vol = df.groupby(supplier_col)[unit_price_col].std().fillna(0).round(2).to_dict()
+#             volatility = {k: float(v) for k, v in vol.items()}
+
+#         # === Order Cycle ===
+#         avg_cycle_time, on_time_ratio = None, None
+#         if order_col and delivery_col in df.columns:
+#             df["cycle_time"] = (df[delivery_col] - df[order_col]).dt.days
+#             avg_cycle_time = round(df["cycle_time"].mean(), 2)
+#             if lead_time_col and lead_time_col in df.columns:
+#                 on_time_ratio = round((df["cycle_time"] <= df[lead_time_col]).mean() * 100, 2)
+
+#         # === Trend (Adaptive) ===
+#         delta_days = (end_date - start_date).days
+#         period_key = "D" if delta_days <= 45 else ("W" if delta_days <= 180 else "M")
+
+#         df["trend_period"] = df["main_date"].dt.to_period(period_key).apply(lambda r: r.start_time)
+#         trend = (
+#             df.groupby("trend_period")[cost_col]
+#             .sum()
+#             .reset_index()
+#             .rename(columns={cost_col: "total_cost"})
+#             .to_dict(orient="records")
+#             if cost_col in df.columns else []
+#         )
+
+#         # === Past-period variance ===
+#         prev_start = start_date - timedelta(days=delta_days)
+#         prev_end = start_date - timedelta(days=1)
+#         prev_df = df[(df["main_date"] >= prev_start) & (df["main_date"] <= prev_end)]
+#         prev_cost = prev_df[cost_col].sum() if cost_col in prev_df.columns else 0
+#         variance = round(((total_procurement_cost - prev_cost) / prev_cost) * 100, 2) if prev_cost else None
+
+#         # === Advanced Procurement Metrics ===
+#         lead_time_consistency, supplier_cost_efficiency_index = {}, {}
+#         top10_share, forecast_accuracy, stockout_rate, cycle_efficiency, supplier_diversity_index = [None] * 5
+
+#         # Lead time consistency
+#         if supplier_col and lead_time_col in df.columns:
+#             lead_time_consistency = df.groupby(supplier_col)[lead_time_col].std().fillna(0).round(2).to_dict()
+
+#         # Supplier cost efficiency
+#         if supplier_col and unit_price_col in df.columns:
+#             avg_price = df[unit_price_col].mean()
+#             if avg_price:
+#                 supplier_cost_efficiency_index = (
+#                     df.groupby(supplier_col)[unit_price_col].mean() / avg_price
+#                 ).round(2).to_dict()
+
+#         # Spend concentration
+#         if supplier_col and cost_col in df.columns:
+#             supplier_spend = df.groupby(supplier_col)[cost_col].sum().sort_values(ascending=False)
+#             if not supplier_spend.empty:
+#                 top10_share = round((supplier_spend.head(10).sum() / supplier_spend.sum()) * 100, 2)
+
+#         # Forecast accuracy & stockout
+#         if forecast_col in df.columns and actual_col in df.columns:
+#             valid = df[df[forecast_col].notna() & df[actual_col].notna() & (df[forecast_col] != 0)]
+#             if not valid.empty:
+#                 diff = abs((valid[forecast_col] - valid[actual_col]) / valid[forecast_col]) * 100
+#                 forecast_accuracy = round(100 - diff.mean(), 2)
+#                 stockout_rate = round((valid[actual_col] > valid[forecast_col]).mean() * 100, 2)
+
+#         # Cycle efficiency
+#         if "cycle_time" in df.columns and lead_time_col in df.columns:
+#             df_valid = df[df["cycle_time"].notna() & df[lead_time_col].notna()]
+#             if not df_valid.empty:
+#                 cycle_efficiency = round((df_valid[lead_time_col] / df_valid["cycle_time"]).mean() * 100, 2)
+
+#         # Supplier diversity index (HHI)
+#         if supplier_col and cost_col in df.columns:
+#             spend = df.groupby(supplier_col)[cost_col].sum()
+#             if not spend.empty:
+#                 hhi = ((spend / spend.sum()) ** 2).sum()
+#                 supplier_diversity_index = round((1 - hhi) * 100, 2)
+
+#         # === Consolidate Results ===
+#         results = {
+#             "filters": {"start_date": str(start_date.date()), "end_date": str(end_date.date()), "period": period},
+#             "supplier_performance": supplier_perf,
+#             "reliability": reliability,
+#             "procurement_costs": {
+#                 "total_procurement_cost": total_procurement_cost,
+#                 "avg_cost_per_supplier": avg_cost_per_supplier,
+#                 "savings": savings,
+#                 "past_period_variance_%": variance,
+#             },
+#             "price_volatility": volatility,
+#             "order_cycle": {"avg_cycle_time": avg_cycle_time, "on_time_delivery_%": on_time_ratio},
+#             "additional_metrics": {
+#                 "lead_time_consistency": lead_time_consistency,
+#                 "supplier_cost_efficiency_index": supplier_cost_efficiency_index,
+#                 "top_10_supplier_spend_share_%": top10_share,
+#                 "forecast_accuracy_%": forecast_accuracy,
+#                 "stockout_frequency_%": stockout_rate,
+#                 "cycle_efficiency_%": cycle_efficiency,
+#                 "supplier_diversity_index_%": supplier_diversity_index,
+#             },
+#             "trend": trend,
+#         }
+
+#         # === AI Background Thread ===
+#         cache_key = generate_ai_cache_key(results, start_date, end_date, period)
+#         if not cache.get(cache_key + ":status"):
+#             cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
+#             threading.Thread(
+#                 target=generate_insight_and_forecast_background,
+#                 args=(results, start_date, end_date, period, cache_key, "procurement_analytics"),
+#             ).start()
+
+#         return Response({
+#             "message": "Procurement analytics computed successfully",
+#             "data": results,
+#             "ai": {"cache_key": cache_key, "status": cache.get(cache_key + ":status")},
+#         })
+
+#     except Exception as e:
+#         return Response({"error": f"Failed to compute Procurement analytics: {str(e)}"}, status=500)
+
+
+def make_json_safe(obj):
+    """Recursively convert numpy, timestamps, and periods to JSON-safe types."""
+    if isinstance(obj, dict):
+        return {k: make_json_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_json_safe(v) for v in obj]
+    elif isinstance(obj, (np.integer, np.int64)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64)):
+        return float(obj)
+    elif isinstance(obj, (pd.Timestamp, pd.Period)):
+        return str(obj)
+    else:
+        return obj
+
 @api_view(["GET"])
 def procurement_analytics(request):
     try:
-        # === Load dataset ===
         df = load_dataset()
 
         # === Filters ===
@@ -3431,12 +3666,11 @@ def procurement_analytics(request):
         if pd.isna(start_date) or pd.isna(end_date):
             return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
 
-        # === Date filter ===
         df = df[(df["main_date"] >= start_date) & (df["main_date"] <= end_date)].copy()
         if df.empty:
             return Response({"error": "No procurement data found for this period."}, status=404)
 
-        # === Column mapping helper ===
+        # === Column finder ===
         def find_col(df, keywords):
             for col in df.columns:
                 if any(k in col.lower() for k in keywords):
@@ -3456,7 +3690,6 @@ def procurement_analytics(request):
         expense_col = find_col(df, ["operating_expense", "sg&a", "overhead"])
         order_id_col = find_col(df, ["purchase_order_id", "po_number"])
 
-        # === Clean numeric/date columns ===
         numeric_cols = [
             supplier_rating_col, lead_time_col, cost_col, unit_price_col,
             forecast_col, actual_col, expense_col
@@ -3469,9 +3702,9 @@ def procurement_analytics(request):
             if d and d in df.columns:
                 df[d] = pd.to_datetime(df[d], errors="coerce", dayfirst=True)
 
-        # === Supplier Performance ===
+        # === Supplier performance ===
         supplier_perf = []
-        if supplier_col and supplier_col in df.columns:
+        if supplier_col:
             supplier_perf = (
                 df.groupby(supplier_col)
                 .agg({
@@ -3489,9 +3722,8 @@ def procurement_analytics(request):
                 .to_dict(orient="records")
             )
 
-        # === Reliability ===
         reliability = {}
-        if delivery_status_col and supplier_col and all(c in df.columns for c in [supplier_col, delivery_status_col]):
+        if delivery_status_col and supplier_col:
             reliability = (
                 df.groupby([supplier_col, delivery_status_col])
                 .size()
@@ -3500,24 +3732,20 @@ def procurement_analytics(request):
                 .to_dict(orient="index")
             )
 
-        # === Core Cost Metrics ===
         total_procurement_cost = round(df[cost_col].sum(), 2) if cost_col in df.columns else None
         avg_cost_per_supplier = (
             round(df.groupby(supplier_col)[cost_col].mean().mean(), 2)
             if supplier_col and cost_col in df.columns else None
         )
-
         savings = None
         if forecast_col in df.columns and actual_col in df.columns:
             savings = round((df[forecast_col] - df[actual_col]).sum(), 2)
 
-        # === Volatility ===
         volatility = {}
         if supplier_col and unit_price_col in df.columns:
             vol = df.groupby(supplier_col)[unit_price_col].std().fillna(0).round(2).to_dict()
             volatility = {k: float(v) for k, v in vol.items()}
 
-        # === Order Cycle ===
         avg_cycle_time, on_time_ratio = None, None
         if order_col and delivery_col in df.columns:
             df["cycle_time"] = (df[delivery_col] - df[order_col]).dt.days
@@ -3525,10 +3753,8 @@ def procurement_analytics(request):
             if lead_time_col and lead_time_col in df.columns:
                 on_time_ratio = round((df["cycle_time"] <= df[lead_time_col]).mean() * 100, 2)
 
-        # === Trend (Adaptive) ===
         delta_days = (end_date - start_date).days
         period_key = "D" if delta_days <= 45 else ("W" if delta_days <= 180 else "M")
-
         df["trend_period"] = df["main_date"].dt.to_period(period_key).apply(lambda r: r.start_time)
         trend = (
             df.groupby("trend_period")[cost_col]
@@ -3539,22 +3765,19 @@ def procurement_analytics(request):
             if cost_col in df.columns else []
         )
 
-        # === Past-period variance ===
         prev_start = start_date - timedelta(days=delta_days)
         prev_end = start_date - timedelta(days=1)
         prev_df = df[(df["main_date"] >= prev_start) & (df["main_date"] <= prev_end)]
         prev_cost = prev_df[cost_col].sum() if cost_col in prev_df.columns else 0
         variance = round(((total_procurement_cost - prev_cost) / prev_cost) * 100, 2) if prev_cost else None
 
-        # === Advanced Procurement Metrics ===
+        # === Advanced Metrics ===
         lead_time_consistency, supplier_cost_efficiency_index = {}, {}
         top10_share, forecast_accuracy, stockout_rate, cycle_efficiency, supplier_diversity_index = [None] * 5
 
-        # Lead time consistency
         if supplier_col and lead_time_col in df.columns:
             lead_time_consistency = df.groupby(supplier_col)[lead_time_col].std().fillna(0).round(2).to_dict()
 
-        # Supplier cost efficiency
         if supplier_col and unit_price_col in df.columns:
             avg_price = df[unit_price_col].mean()
             if avg_price:
@@ -3562,13 +3785,11 @@ def procurement_analytics(request):
                     df.groupby(supplier_col)[unit_price_col].mean() / avg_price
                 ).round(2).to_dict()
 
-        # Spend concentration
         if supplier_col and cost_col in df.columns:
             supplier_spend = df.groupby(supplier_col)[cost_col].sum().sort_values(ascending=False)
             if not supplier_spend.empty:
                 top10_share = round((supplier_spend.head(10).sum() / supplier_spend.sum()) * 100, 2)
 
-        # Forecast accuracy & stockout
         if forecast_col in df.columns and actual_col in df.columns:
             valid = df[df[forecast_col].notna() & df[actual_col].notna() & (df[forecast_col] != 0)]
             if not valid.empty:
@@ -3576,20 +3797,18 @@ def procurement_analytics(request):
                 forecast_accuracy = round(100 - diff.mean(), 2)
                 stockout_rate = round((valid[actual_col] > valid[forecast_col]).mean() * 100, 2)
 
-        # Cycle efficiency
         if "cycle_time" in df.columns and lead_time_col in df.columns:
             df_valid = df[df["cycle_time"].notna() & df[lead_time_col].notna()]
             if not df_valid.empty:
                 cycle_efficiency = round((df_valid[lead_time_col] / df_valid["cycle_time"]).mean() * 100, 2)
 
-        # Supplier diversity index (HHI)
         if supplier_col and cost_col in df.columns:
             spend = df.groupby(supplier_col)[cost_col].sum()
             if not spend.empty:
                 hhi = ((spend / spend.sum()) ** 2).sum()
                 supplier_diversity_index = round((1 - hhi) * 100, 2)
 
-        # === Consolidate Results ===
+        # === Results ===
         results = {
             "filters": {"start_date": str(start_date.date()), "end_date": str(end_date.date()), "period": period},
             "supplier_performance": supplier_perf,
@@ -3614,13 +3833,16 @@ def procurement_analytics(request):
             "trend": trend,
         }
 
-        # === AI Background Thread ===
+        # === Sanitize for JSON ===
+        results = make_json_safe(results)
+
+        # === AI Thread ===
         cache_key = generate_ai_cache_key(results, start_date, end_date, period)
         if not cache.get(cache_key + ":status"):
             cache.set(cache_key + ":status", {"insight": "processing", "forecast": "processing"}, timeout=3600)
             threading.Thread(
                 target=generate_insight_and_forecast_background,
-                args=(results, start_date, end_date, period, cache_key, "procurement_analytics"),
+                args=(results, str(start_date.date()), str(end_date.date()), period, cache_key, "procurement_analytics"),
             ).start()
 
         return Response({
